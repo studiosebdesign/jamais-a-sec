@@ -174,7 +174,7 @@ async function principal() {
     else console.warn('  Aucune source disponible, on garde les enseignes précédentes.');
   }
   const assoc = associer(stations, enseignes);
-  console.log(`  Enseignes : ${assoc.marques} stations sur ${stations.length} (${Math.round(assoc.marques / Math.max(1, stations.length) * 100)} %) · positions corrigées : ${assoc.positions}`);
+  console.log(`  Enseignes : ${assoc.marques} stations sur ${stations.length} (${Math.round(assoc.marques / Math.max(1, stations.length) * 100)} %) · positions corrigées : ${assoc.positions} · horaires ajoutés (OSM) : ${assoc.horaires}`);
 
   // Historique : on relit celui déjà publié (s'il existe) et on y ajoute la médiane du jour
   const ancien = await lireHistorique(opt.historique || path.join(opt.sortie, 'data', 'tendances.json'));

@@ -16,7 +16,7 @@ import { departement } from '../src/departements.js';
 import { analyser, distanceKm, REGLAGES, tendance } from '../src/calcul.js';
 import { radar } from '../src/radar.js';
 import { fusionner, medianesDuJour } from '../src/historique.js';
-import { depuisOSM, associer, normaliserMarque, depuisReferentiel, assembler } from '../src/enseignes.js';
+import { depuisOSM, associer, normaliserMarque, depuisReferentiel, assembler, lireOpeningHours } from '../src/enseignes.js';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 const flux = fabriquerFlux();
@@ -237,7 +237,7 @@ test('référentiel data.gouv : nom et position par numéro officiel', () => {
   const ref = depuisReferentiel(csv);
   const osm = depuisOSM({ elements: [{ type: 'node', lat: 48.6, lon: 2.4, tags: { brand: 'Avia' } }] });
   const ens = assembler({ referentiel: ref, osm });
-  assert.equal(ens.version, 4);
+  assert.equal(ens.version, 5);
   const st = [{ id: '91590009', lat: 48.507, lng: 2.37442 }, { id: '91760001', lat: 48.50264, lng: 2.34774 }, { id: 'X', lat: 48.6001, lng: 2.4 }];
   const r = associer(st, ens);
   assert.equal(st[0].m, 'TotalEnergies');
@@ -253,4 +253,19 @@ test('horaires d\'ouverture', () => {
     <jour id="2" nom="Mardi" ferme=""><horaire ouverture="06.30" fermeture="21.00"/></jour><jour id="7" nom="Dimanche" ferme="1"/></horaires></pdv>`;
   assert.deepEqual(lireHoraires(b), [[420, 750, 840, 1170], [390, 1260], null, null, null, null, 0]);
   assert.equal(lireHoraires('<horaires automate-24-24="1"><jour id="1" nom="Lundi" ferme=""/></horaires>'), undefined);
+});
+
+test('horaires OpenStreetMap', () => {
+  assert.deepEqual(lireOpeningHours('Mo-Fr 07:00-20:00; Sa 08:00-12:00,14:00-19:00; Su off; PH off'),
+    [[420, 1200], [420, 1200], [420, 1200], [420, 1200], [420, 1200], [480, 720, 840, 1140], 0]);
+  assert.equal(lireOpeningHours('24/7')[6][1], 1440);
+  assert.deepEqual(lireOpeningHours('06:30-21:00')[3], [390, 1260]);
+  assert.equal(lireOpeningHours('Mo-Fr 07:00-20:00 "sauf travaux"'), undefined, 'forme non comprise : rien');
+  // Ajout à une station sans horaires officiels, via le numéro officiel
+  const osm = depuisOSM({ elements: [{ type: 'node', lat: 48.5, lon: 2.35, tags: { brand: 'Intermarché', 'ref:FR:prix-carburants': '91760001', opening_hours: 'Mo-Sa 08:30-19:30; Su 09:00-12:30' } }] });
+  const ens = assembler({ osm });
+  const st = [{ id: '91760001', lat: 48.5, lng: 2.35 }, { id: '2', lat: 48.5, lng: 2.35, o: [0, 0, 0, 0, 0, 0, 0] }];
+  const r = associer(st, ens);
+  assert.deepEqual(st[0].o[6], [540, 750]);
+  assert.equal(r.horaires, 1);
 });

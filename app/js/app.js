@@ -397,7 +397,8 @@ function ouvrirStation(id) {
   const ouv = ouverture(s);
   let html = `<div class="gris">${esc(adresse(s))}${d !== null ? ' · ' + km(d) : ''}${s.aut ? ' · autoroute' : ''}</div>
     <div class="ouverture ${ouv.etat}"><span class="pastille"></span><b style="flex:1;min-width:0">${esc(ouv.texte)}</b>${s.o ? '<button class="lien" data-horaires aria-expanded="false">Horaires ▾</button>' : ''}</div>
-    <div class="bloc-horaires" hidden>${htmlHoraires(s)}</div>`;
+    <div class="bloc-horaires" hidden>${htmlHoraires(s)}</div>
+    <a class="lien-gmaps" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((s.m ? s.m + ' ' : 'station-service ') + (s.adr || '') + ' ' + (s.cp || '') + ' ' + (s.ville || ''))}" target="_blank" rel="noopener">${s.o ? 'Vérifier sur Google Maps' : 'Voir les horaires sur Google Maps'} ↗</a>`;
   if (x) {
     const nom = x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'Station habituelle' : 'La plus proche') : !recent(x) ? 'Prix à confirmer' : x.gain > 1.5 ? 'Ça vaut le détour' : x.gain > 0 ? 'Petit gain' : 'Fausse bonne affaire';
     html += `<div class="carte-partage"><div><div class="cond" style="font-weight:700;font-size:20px;text-transform:uppercase">${nom}</div>
