@@ -196,8 +196,9 @@
 
   /* Curseurs : grosse zone tactile, gros bouton, pas de défilement de page pendant le glissé */
   input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; margin: 0; background: transparent; touch-action: none; cursor: pointer; }
-  input[type=range]::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; background: rgba(17,17,17,.18); }
+  input[type=range]::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; background: linear-gradient(to right, var(--rempli, var(--j)) 0 var(--p, 50%), rgba(17,17,17,.18) var(--p, 50%) 100%); }
   input[type=range]::-moz-range-track { height: 10px; border-radius: 5px; background: rgba(17,17,17,.18); }
+  input[type=range]::-moz-range-progress { height: 10px; border-radius: 5px; background: var(--rempli, var(--j)); }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 34px; height: 34px; border-radius: 17px; background: var(--n); border: 4px solid var(--j); margin-top: -12px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
   input[type=range]::-moz-range-thumb { width: 28px; height: 28px; border-radius: 14px; background: var(--n); border: 4px solid var(--j); }
   input[type=range]:active::-webkit-slider-thumb { transform: scale(1.12); }
@@ -210,3 +211,20 @@
 /* Station de comparaison, épinglée en tête de liste */
 .ligne-st.ref { border-color: #111; border-style: dashed; background: #FFF8D6; }
 .ligne-st.ref .badge-ref { display:inline-block; background:#111; color:#F7CB45; font-family:var(--titre, inherit); font-size:11px; letter-spacing:.06em; text-transform:uppercase; padding:2px 7px; border-radius:6px; margin-bottom:4px; }
+
+/* Curseur du Radar : fond jaune, donc partie remplie en noir */
+#t { --rempli: var(--n); }
+/* Ouverture / horaires */
+.ouverture { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0 2px; font-size:15px; }
+.ouverture.petit { margin:4px 0 0; font-size:14px; font-weight:600; }
+.ouverture .pastille { width:10px; height:10px; border-radius:5px; background:#9A9A9A; flex:none; }
+.ouverture.ouvert .pastille { background:#12A150; }
+.ouverture.ferme .pastille { background:var(--r); }
+.ouverture.ferme { color:var(--r); }
+.ouverture .lien { margin-left:auto; background:none; border:2px solid var(--n); border-radius:10px; padding:4px 10px; font:inherit; font-weight:700; color:var(--n); cursor:pointer; }
+table.horaires { width:100%; border-collapse:collapse; margin-top:6px; font-size:15px; }
+table.horaires th { text-align:left; font-weight:500; text-transform:capitalize; padding:5px 0; width:40%; }
+table.horaires td { text-align:right; padding:5px 0; }
+table.horaires tr + tr { border-top:1px solid rgba(17,17,17,.08); }
+table.horaires tr.auj { font-weight:800; }
+.tag-ferme { display:inline-block; background:var(--r); color:#fff; font-weight:700; font-size:12px; padding:1px 6px; border-radius:6px; }
