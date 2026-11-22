@@ -16,7 +16,7 @@ import { departement } from '../src/departements.js';
 import { analyser, distanceKm, REGLAGES, tendance } from '../src/calcul.js';
 import { radar } from '../src/radar.js';
 import { fusionner, medianesDuJour } from '../src/historique.js';
-import { depuisOSM, associer, normaliserMarque } from '../src/enseignes.js';
+import { depuisOSM, associer, normaliserMarque, depuisReferentiel, assembler } from '../src/enseignes.js';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 const flux = fabriquerFlux();
@@ -228,4 +228,22 @@ test('enseignes OpenStreetMap : noms harmonisés et association à moins de 150 
   assert.equal(st3[0].m, 'TotalEnergies');
   assert.deepEqual([st3[0].lat, st3[0].lng], [48.47, 2.39]);
   assert.equal(r3.positions, 1);
+});
+
+test('référentiel data.gouv : nom et position par numéro officiel', () => {
+  const csv = 'id_station_officiel,nom_normalise,adresse,ville,code_postal,latitude_osm,longitude_osm,source_enrichissement\n' +
+    '91590009,"Total Access","RN191 - ROUTE DE CORBEIL",Baulne,91590,48.49030720,2.35584690,"OSM"\n' +
+    '91760001,Intermarché,"Route de la Ferté-Alais",Itteville,91760,48.49982630,2.35137500,"OSM"\n';
+  const ref = depuisReferentiel(csv);
+  const osm = depuisOSM({ elements: [{ type: 'node', lat: 48.6, lon: 2.4, tags: { brand: 'Avia' } }] });
+  const ens = assembler({ referentiel: ref, osm });
+  assert.equal(ens.version, 4);
+  const st = [{ id: '91590009', lat: 48.507, lng: 2.37442 }, { id: '91760001', lat: 48.50264, lng: 2.34774 }, { id: 'X', lat: 48.6001, lng: 2.4 }];
+  const r = associer(st, ens);
+  assert.equal(st[0].m, 'TotalEnergies');
+  assert.deepEqual([st[0].lat, st[0].lng], [48.49031, 2.35585], 'Baulne replacée à sa vraie position');
+  assert.equal(st[1].m, 'Intermarché');
+  assert.equal(st[2].m, 'Avia', 'complément OSM par proximité');
+  assert.equal(r.marques, 3);
+  assert.equal(r.positions, 2);
 });
