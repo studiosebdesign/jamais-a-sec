@@ -1,0 +1,56 @@
+# Jamais à sec — mise à jour automatique des prix toutes les 15 minutes
+# Télécharge le flux officiel, prépare les fichiers par département et les publie sur GitHub Pages.
+# (L'application elle-même est hébergée sur Cloudflare Pages, à partir du dossier app/.)
+
+name: Mise à jour des prix
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # toutes les 15 minutes (GitHub peut avoir quelques minutes de retard)
+  workflow_dispatch:          # bouton « Run workflow » pour lancer à la main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  mise-a-jour:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.publication.outputs.page_url }}
+    steps:
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Vérifier le script (tests)
+        run: npm test
+        working-directory: donnees
+
+      - name: Préparer la publication
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Télécharger et préparer les prix (et compléter l'historique publié)
+        run: node src/index.js --sortie ../site --historique "${{ steps.pages.outputs.base_url }}/data/tendances.json"
+        working-directory: donnees
+
+      - name: Envoyer les fichiers
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publier sur GitHub Pages
+        id: publication
+        uses: actions/deploy-pages@v4
