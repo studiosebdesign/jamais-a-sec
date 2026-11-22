@@ -39,9 +39,11 @@ export function departementsUtiles(index, lat, lng, rayonKm) {
  * params : { stations, lat, lng, carburant, rayonKm, volume, conso, habituelleId, maintenant, reglages,
  *            destination: { lat, lng } (facultatif) }
  *
+ * La référence est la même dans les deux modes : la station habituelle, ou à défaut la plus proche
+ * de la position (« ce que vous auriez payé sans l'app »). Seul le coût du détour change :
  * Autour de moi : détour = (distance station − distance référence) × 2 (aller-retour) × facteur route.
- * Sur ma route  : détour = kilomètres ajoutés au trajet (A→station→B − A→B) × facteur route,
- *                 comparé à celui de la référence.
+ * Sur ma route  : détour = kilomètres ajoutés au trajet (A→station→B − A→B) × facteur route.
+ * Ainsi, pour une même station, le gain « sur ma route » est toujours égal ou supérieur.
  */
 export function analyser(params) {
   const R = { ...REGLAGES, ...(params.reglages || {}) };
@@ -72,19 +74,30 @@ export function analyser(params) {
   // Prix médian du secteur : prix récents, hors autoroute
   const med = mediane(dispo.filter(x => x.frais && !x.station.aut).map(x => x.prix));
 
-  // Référence : la station habituelle si elle est disponible, sinon la plus proche
+  // Référence : la station habituelle si elle est disponible, sinon la plus proche de la position.
+  // Sur un trajet, on la cherche autour de la position (rayon), même si elle n'est pas sur la route.
+  let candidatsRef = dispo;
+  if (dest) {
+    candidatsRef = [...dispo];
+    for (const s of stations) {
+      if (!s.p[c] || (s.r && c in s.r) || s.ferm || dispo.some(x => x.station === s)) continue;
+      const d = distanceKm(lat, lng, s.lat, s.lng);
+      if (d > rayonKm) continue;
+      candidatsRef.push({ station: s, distanceKm: d, ajoutKm: 0, prix: s.p[c][0], ageHeures: (maintenantMin - s.p[c][1]) / 60, frais: (maintenantMin - s.p[c][1]) / 60 <= R.prixFraisHeures, horsTrajet: true });
+    }
+  }
   let ref = null, typeRef = 'plus-proche', habituelleIndisponible = false;
   if (habituelleId) {
-    ref = dispo.find(x => x.station.id === habituelleId) || null;
+    ref = candidatsRef.find(x => x.station.id === habituelleId) || null;
     if (ref) typeRef = 'habituelle'; else habituelleIndisponible = true;
   }
-  const cle = dest ? 'ajoutKm' : 'distanceKm';
-  if (!ref) ref = dispo.reduce((a, b) => (!a || b[cle] < a[cle] ? b : a), null);
+  if (!ref) ref = candidatsRef.reduce((a, b) => (!a || b.distanceKm < a.distanceKm ? b : a), null);
+  if (ref && !dispo.includes(ref)) dispo.push(ref);
 
   const classement = dispo.map(x => {
-    const detourKm = dest
-      ? Math.max(0, x.ajoutKm - (ref ? ref.ajoutKm : 0))
-      : Math.max(0, x.distanceKm - (ref ? ref.distanceKm : 0)) * 2 * R.facteurRoute;
+    const detourKm = x === ref ? 0 : dest
+      ? x.ajoutKm
+      : Math.max(0, x.distanceKm - ref.distanceKm) * 2 * R.facteurRoute;
     const gain = ref ? (ref.prix - x.prix) * volume - detourKm / 100 * conso * x.prix : 0;
     const estRef = x === ref;
     return {

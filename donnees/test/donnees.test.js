@@ -153,6 +153,12 @@ test('Sur ma route : le détour se mesure par rapport au trajet', () => {
   assert.ok(s.gain > 3.4, 'gain ' + s.gain);
   const autour = analyser({ stations: st, lat: 48.516, lng: 2.448, carburant: 'gazole', volume: 37.5, conso: 6, rayonKm: 15, maintenant: Date.now() });
   assert.ok(autour.classement.find(x => x.station.id === 'SUR_ROUTE').gain < s.gain, 'moins rentable en aller-retour');
+  assert.equal(r.reference.id, 'PROCHE', 'même référence dans les deux modes');
+  assert.equal(autour.reference.id, 'PROCHE');
+  // Station habituelle loin du trajet : elle reste la référence
+  const h = analyser({ stations: st, lat: 48.516, lng: 2.448, carburant: 'gazole', volume: 37.5, conso: 6, rayonKm: 15, destination: corbeil, habituelleId: 'A_L_OPPOSE', maintenant: Date.now() });
+  assert.equal(h.reference.type, 'habituelle');
+  assert.equal(h.reference.prix, 1.60);
 });
 
 test('tendance des prix', () => {
