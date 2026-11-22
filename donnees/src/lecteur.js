@@ -76,6 +76,7 @@ export function lireStation(bloc, options) {
     if (/^d/i.test(r.type || '')) { plusVendu.add(cle); continue; }
     const debut = parisVersMs(r.debut), fin = parisVersMs(r.fin);
     if (fin && fin <= maintenant) continue; // rupture terminée
+        if (debut && debut < maintenant - 15 * 86400000) { plusVendu.add(cle); continue; } // « temporaire » depuis plus de 15 jours = plus vendu
     ruptures[cle] = debut ? msVersMinutes(debut) : 0;
   }
 
