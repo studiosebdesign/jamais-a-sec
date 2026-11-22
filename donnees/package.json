@@ -1,0 +1,15 @@
+{
+  "name": "jamais-a-sec-donnees",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jamais à sec — récupération et préparation des prix des carburants (open data)",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "maj": "node src/index.js",
+    "radar": "node src/radar.js",
+    "test": "node --test test/donnees.test.js"
+  },
+  "author": "Sebdesign Studio",
+  "license": "MIT"
+}
