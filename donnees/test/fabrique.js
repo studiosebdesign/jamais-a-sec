@@ -12,7 +12,7 @@ function pdv({ id, lat, lng, cp, pop = 'R', adresse, ville, prix = [], ruptures 
   l.push(`  <pdv id="${id}" latitude="${lat}" longitude="${lng}" cp="${cp}" pop="${pop}">`);
   l.push(`    <adresse>${adresse}</adresse>`);
   l.push(`    <ville>${ville}</ville>`);
-  l.push(`    <horaires automate-24-24="${h24 ? 1 : ''}"><jour id="1" nom="Lundi" ferme=""/></horaires>`);
+  l.push(`    <horaires automate-24-24="${h24 ? 1 : ''}">${[1,2,3,4,5,6].map(j => `<jour id="${j}" nom="J" ferme=""><horaire ouverture="07.00" fermeture="20.00"/></jour>`).join('')}<jour id="7" nom="Dimanche" ferme="1"/></horaires>`);
   l.push(`    <services><service>Boutique alimentaire</service></services>`);
   for (const p of prix) l.push(`    <prix nom="${p.nom}" id="${p.id}" maj="${p.maj}" valeur="${p.valeur}"/>`);
   for (const r of ruptures) l.push(`    <rupture id="${r.id}" nom="${r.nom}" debut="${r.debut}" fin="${r.fin || ''}" type="${r.type}"/>`);

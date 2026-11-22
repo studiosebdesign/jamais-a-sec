@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { fabriquerFlux, CHAMPCUEIL } from './fabrique.js';
 import { ouvrirXmlDansZip } from '../src/zip.js';
 import { traiterFlux, ecrire } from '../src/index.js';
-import { decoupeur } from '../src/lecteur.js';
+import { decoupeur, lireHoraires } from '../src/lecteur.js';
 import { parisVersMs } from '../src/temps.js';
 import { departement } from '../src/departements.js';
 import { analyser, distanceKm, REGLAGES, tendance } from '../src/calcul.js';
@@ -246,4 +246,11 @@ test('référentiel data.gouv : nom et position par numéro officiel', () => {
   assert.equal(st[2].m, 'Avia', 'complément OSM par proximité');
   assert.equal(r.marques, 3);
   assert.equal(r.positions, 2);
+});
+
+test('horaires d\'ouverture', () => {
+  const b = `<pdv><horaires automate-24-24=""><jour id="1" nom="Lundi" ferme=""><horaire ouverture="07.00" fermeture="12.30"/><horaire ouverture="14.00" fermeture="19.30"/></jour>
+    <jour id="2" nom="Mardi" ferme=""><horaire ouverture="06.30" fermeture="21.00"/></jour><jour id="7" nom="Dimanche" ferme="1"/></horaires></pdv>`;
+  assert.deepEqual(lireHoraires(b), [[420, 750, 840, 1170], [390, 1260], null, null, null, null, 0]);
+  assert.equal(lireHoraires('<horaires automate-24-24="1"><jour id="1" nom="Lundi" ferme=""/></horaires>'), undefined);
 });
