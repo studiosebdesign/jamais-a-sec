@@ -506,7 +506,7 @@ function rendreVehicule() {
     ${S.installer ? '<button class="btn-noir" id="v-installer">Installer l\'app sur ce téléphone</button>' : ''}
     <button class="lien" id="revoir">Revoir l'écran d'accueil</button>
     <button class="btn-blanc" id="v-soutien" style="font-size:19px">Soutenir Jamais à sec</button>
-    <p class="gris" style="margin:0;font-size:13px;line-height:1.45">Prix : Ministère de l'Économie et des Finances, « Prix des carburants en France », Licence Ouverte 2.0 (data.gouv.fr). Carte et enseignes : © contributeurs OpenStreetMap (ODbL), OpenFreeMap. Application indépendante, non affiliée au gouvernement. Votre position reste dans votre téléphone. Sebdesign Studio.</p>
+    <p class="gris" style="margin:0;font-size:13px;line-height:1.45">Prix : Ministère de l'Économie et des Finances, « Prix des carburants en France », Licence Ouverte 2.0 (data.gouv.fr). Carte : © contributeurs OpenStreetMap (ODbL), OpenFreeMap. Noms des stations : référentiel Chiffrex sur data.gouv.fr et OpenStreetMap (ODbL). Application indépendante, non affiliée au gouvernement. Votre position reste dans votre téléphone. Sebdesign Studio.</p>
   </div>`;
   el.scrollTop = y;
   brancherChoix('v-carbu', CARBUS.map(c => ({ v: c.id })), v => { P.carbu = v; sauver(); rafraichir(); });
