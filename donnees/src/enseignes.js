@@ -40,7 +40,7 @@ const MARQUES = [
   [/\bal\s*fatah?\b/i, null]
 ];
 const GENERIQUES = /^(station[- ]?service|station|carburants?|essence|fuel|gas station|pompes?|distributeur|libre[- ]service|aire de service|lavage|gpl|adblue|ad blue)s?$/i;
-export const VERSION = 2;
+export const VERSION = 3;
 
 /** Nom à afficher : une enseigne connue, sinon la marque déclarée, sinon le nom de la station (« Garage du Centre »). */
 export function normaliserMarque(tags) {
@@ -65,16 +65,20 @@ export async function telechargerOSM() {
 }
 
 export function depuisOSM(json, maintenant = Date.now()) {
-  const marques = [], index = new Map(), points = [];
+  const marques = [], index = new Map(), points = [], refs = {};
+  const idxMarque = m => { if (!m) return -1; if (!index.has(m)) { index.set(m, marques.length); marques.push(m); } return index.get(m); };
   for (const e of json.elements || []) {
     const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
     if (lat == null || lng == null) continue;
-    const m = normaliserMarque(e.tags || {});
-    if (!m) continue;
-    if (!index.has(m)) { index.set(m, marques.length); marques.push(m); }
-    points.push([Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5, index.get(m)]);
+    const t = e.tags || {};
+    const i = idxMarque(normaliserMarque(t));
+    const pt = [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5, i];
+    // Identifiant officiel prix-carburants renseigné dans OSM : association sûre, même si les coordonnées officielles sont fausses
+    const ref = String(t['ref:FR:prix-carburants'] || '').split(/[;,\s]+/).filter(x => /^\d{6,9}$/.test(x));
+    for (const r of ref) refs[r] = pt;
+    if (!ref.length && i >= 0) points.push(pt);
   }
-  return { version: VERSION, source: 'OpenStreetMap (ODbL), via Overpass API', genere: new Date(maintenant).toISOString(), marques, points };
+  return { version: VERSION, source: 'OpenStreetMap (ODbL), via Overpass API', genere: new Date(maintenant).toISOString(), marques, refs, points };
 }
 
 export async function lireEnseignes(source) {
@@ -88,11 +92,23 @@ export async function lireEnseignes(source) {
   } catch { return null; }
 }
 
-/** Ajoute s.m (l'enseigne) aux stations. Renvoie le nombre trouvé.
- *  - moins de 150 m : la station OSM la plus proche ;
- *  - jusqu'à 350 m : seulement si la station OSM n'a pas de station officielle plus proche (évite les erreurs en ville). */
+/** Ajoute s.m (l'enseigne) aux stations et corrige leur position si besoin. Renvoie { marques, positions }.
+ *  1) par identifiant officiel (tag OSM ref:FR:prix-carburants) : enseigne + position OSM si l'officielle est décalée ;
+ *  2) sinon par proximité : moins de 150 m, ou jusqu'à 350 m si les deux sont mutuellement les plus proches. */
 export function associer(stations, enseignes) {
-  if (!enseignes?.points?.length) return 0;
+  const res = { marques: 0, positions: 0 };
+  if (!enseignes) return res;
+  const dist = (p, s) => Math.hypot((p[1] - s.lng) * 111320 * Math.cos(s.lat * Math.PI / 180), (p[0] - s.lat) * 110570);
+  const restantes = [];
+  for (const s of stations) {
+    const p = enseignes.refs?.[s.id];
+    if (!p) { restantes.push(s); continue; }
+    if (p[2] >= 0) { s.m = enseignes.marques[p[2]]; res.marques++; }
+    const d = dist(p, s);
+    if (d > 40 && d < 8000) { s.lat = p[0]; s.lng = p[1]; res.positions++; }
+    if (p[2] < 0) restantes.push(s); // position corrigée mais pas de nom : on tente la proximité
+  }
+  if (!enseignes.points?.length) return res;
   const pas = 0.01, cle = (a, b) => a + ':' + b; // cases d'environ 1 km
   const grille = new Map();
   for (const p of enseignes.points) {
@@ -100,9 +116,8 @@ export function associer(stations, enseignes) {
     if (!grille.has(k)) grille.set(k, []);
     grille.get(k).push(p);
   }
-  const dist = (p, s) => Math.hypot((p[1] - s.lng) * 111320 * Math.cos(s.lat * Math.PI / 180), (p[0] - s.lat) * 110570);
   const choix = [], plusProcheDuPoint = new Map();
-  for (const s of stations) {
+  for (const s of restantes) {
     const gi = Math.floor(s.lat / pas), gj = Math.floor(s.lng / pas);
     let best = null, bd = DISTANCE_MUTUELLE_M;
     for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
@@ -115,9 +130,8 @@ export function associer(stations, enseignes) {
     }
     if (best) choix.push([s, best, bd]);
   }
-  let n = 0;
   for (const [s, p, d] of choix) {
-    if (d <= DISTANCE_MAX_M || plusProcheDuPoint.get(p)?.s === s) { s.m = enseignes.marques[p[2]]; n++; }
+    if (d <= DISTANCE_MAX_M || plusProcheDuPoint.get(p)?.s === s) { s.m = enseignes.marques[p[2]]; res.marques++; }
   }
-  return n;
+  return res;
 }

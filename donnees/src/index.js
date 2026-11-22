@@ -163,8 +163,8 @@ async function principal() {
       enseignes = await telechargerOSM();
     } catch (e) { console.warn('  Enseignes OSM indisponibles (' + e.message + '), on garde les précédentes.'); }
   }
-  const avecMarque = associer(stations, enseignes);
-  console.log(`  Enseignes : ${avecMarque} stations sur ${stations.length} (${Math.round(avecMarque / Math.max(1, stations.length) * 100)} %)`);
+  const assoc = associer(stations, enseignes);
+  console.log(`  Enseignes : ${assoc.marques} stations sur ${stations.length} (${Math.round(assoc.marques / Math.max(1, stations.length) * 100)} %) · positions corrigées : ${assoc.positions}`);
 
   // Historique : on relit celui déjà publié (s'il existe) et on y ajoute la médiane du jour
   const ancien = await lireHistorique(opt.historique || path.join(opt.sortie, 'data', 'tendances.json'));
