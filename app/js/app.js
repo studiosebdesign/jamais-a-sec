@@ -274,7 +274,7 @@ function rendreVerdict() {
   const trajet = R.mode === 'trajet';
   if (best) {
     h += `<div class="panneau"><div class="surtitre">${trajet ? (best.gain > 1.5 ? 'Sur votre route' : 'Petit gain sur votre route') : (best.gain > 1.5 ? 'Ça vaut le détour' : 'Petit gain possible')}</div>
-      <div class="gros">${montant(best.gain)}</div><div class="sous">d'économie sur ce plein, ${trajet ? 'détour compris' : 'trajet déduit'}</div></div>`;
+      <div class="gros">${montant(best.gain)}</div><div class="sous">d'économie sur ce plein, ${trajet ? 'détour compris' : 'aller-retour déduit'}</div></div>`;
   } else {
     h += `<div class="panneau"><div class="surtitre">${trajet ? 'Faites le plein en route' : 'Restez près de chez vous'}</div>
       <div class="gros" style="font-size:64px">${p3(ref.prix)} €</div>
@@ -286,7 +286,7 @@ function rendreVerdict() {
   h += `<div class="trio"><div><b>${p3(cible.prix)}</b><small>€ / litre</small></div><div><b>${dTxt}</b><small>${dLeg}</small></div>
       <div class="${age <= 180 ? 'maj-frais' : ''}"><b>${ageCourt(age)}</b><small>depuis la MAJ</small></div></div></div>
   <div class="corps">
-    <div><div class="station-titre">${esc(nomStation(cible.station))}</div><div class="gris">${trajet ? 'Sur votre trajet' : km(cible.distanceKm)} · ${cible === ref ? libRef(R).replace('la station', 'station').replace('votre station', 'votre station') : 'contre ' + p3(ref.prix) + ' € à ' + libRef(R)}</div></div>
+    <div><div class="station-titre">${esc(nomStation(cible.station))}</div><div class="gris">${trajet ? 'Sur votre trajet' : km(cible.distanceKm)} · ${cible === ref ? libRef(R).replace('la station', 'station').replace('votre station', 'votre station') : 'contre ' + p3(ref.prix) + ' € chez ' + esc(nomStation(ref.station)) + ', ' + (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche de vous')}</div></div>
     <div class="actions"><button class="btn-noir" data-yaller="${esc(cible.station.id)}">${IC_GO}Y aller</button><button class="btn-blanc" data-partage="${esc(cible.station.id)}" aria-label="Alerter un proche">${IC_PARTAGE}</button></div>
     ${htmlConseilE10(cible)}
     <div class="simu"><div class="l"><label for="vol">Volume à remplir</label><output id="o-vol">${litres(volume())}</output></div>
@@ -301,21 +301,21 @@ function rendreVerdict() {
   el.innerHTML = h;
   const autres = R.tension
     ? R.classement.filter(recent).sort((a, b) => a.ageHeures - b.ageHeures).slice(0, 6)
-    : (() => { const r = R.classement.filter(x => x !== cible); return [...r.filter(recent).slice(0, 5), ...r.filter(x => !recent(x)).slice(0, 1)]; })();
+    : (() => { const r = R.classement.filter(x => x !== cible && x !== ref); return [...(cible !== ref ? [ref] : []), ...r.filter(recent).slice(0, 5), ...r.filter(x => !recent(x)).slice(0, 1)]; })();
   const nowMin = maintenantMin();
   document.getElementById('liste').innerHTML = autres.map(x => {
     const ageX = nowMin - x.station.p[P.carbu][1];
     // À droite : toujours le prix à la pompe ; en dessous, ce que ça vous fait gagner ou perdre
     let cls = 'ligne-st', sous = '';
     if (R.tension) { if (ageX <= 60) cls += ' frais'; }
-    else if (x.verdict === 'reference') sous = '<small class="g">référence</small>';
+    else if (x.verdict === 'reference') { cls += ' ref'; sous = '<small class="g">référence</small>'; }
     else if (!recent(x)) sous = '<small class="g">à confirmer</small>';
     else if (x.gain > 0) sous = `<small class="g plus">Économie ${montant(x.gain)}</small>`;
     else { cls += ' perte'; sous = `<small class="g moins">Perte ${montant(x.gain)}</small>`; }
     const val = p3(x.prix) + ' €' + sous;
     if (!recent(x)) cls += ' vieille';
     const lieu = x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche') : (trajet ? '+' + km(x.detourKm) + ' de route' : 'détour ' + km(x.detourKm));
-    return `<button class="${cls}" data-station="${esc(x.station.id)}"><div style="min-width:0"><div class="nom">${esc(nomStation(x.station))}</div><div class="meta">${R.tension ? km(x.distanceKm) : lieu} · ${etiquetteAge(ageX)}</div></div><div class="val">${val}</div></button>`;
+    return `<button class="${cls}" data-station="${esc(x.station.id)}"><div style="min-width:0">${x.verdict === 'reference' && !R.tension ? '<span class="badge-ref">Comparée à</span>' : ''}<div class="nom">${esc(nomStation(x.station))}</div><div class="meta">${R.tension ? km(x.distanceKm) : x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche') + ' · ' + km(x.distanceKm) : lieu} · ${etiquetteAge(ageX)}</div></div><div class="val">${val}</div></button>`;
   }).join('') || '<p class="gris">Aucune autre station.</p>';
   brancherVerdict(el, R);
 }

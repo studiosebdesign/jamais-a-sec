@@ -4,7 +4,7 @@
 //   marqués d'un en-tête « x-jas-cache » pour que l'app affiche le bandeau « Hors connexion ».
 // - Les bibliothèques et polices (unpkg, jsdelivr, Google Fonts) : cache d'abord.
 
-const VERSION = 'jas-v4';
+const VERSION = 'jas-v5';
 const APP = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/calcul.js', 'js/carte.js', 'manifest.webmanifest',
   'icones/icone-192.png', 'icones/icone-512.png'];
 

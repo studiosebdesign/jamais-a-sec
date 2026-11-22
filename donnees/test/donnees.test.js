@@ -205,4 +205,17 @@ test('enseignes OpenStreetMap : noms harmonisés et association à moins de 150 
   assert.equal(st[0].m, 'TotalEnergies');
   assert.equal(st[1].m, 'Intermarché', 'à ~60 m');
   assert.equal(st[2].m, undefined, 'trop loin : pas d\'enseigne');
+  // Noms libres et association à distance moyenne si mutuelle
+  assert.equal(normaliserMarque({ name: 'Relais Total Itteville' }), 'TotalEnergies');
+  assert.equal(normaliserMarque({ name: 'Garage du Centre' }), 'Garage du Centre');
+  assert.equal(normaliserMarque({ operator: 'Carrefour Market' }), 'Carrefour');
+  const osm2 = depuisOSM({ elements: [
+    { type: 'node', lat: 48.5000, lon: 2.3000, tags: { name: 'Garage du Centre' } },
+    { type: 'node', lat: 48.4000, lon: 2.3000, tags: { brand: 'Avia' } }
+  ] });
+  const st2 = [{ id: 'D', lat: 48.5025, lng: 2.3000 }, { id: 'E', lat: 48.4025, lng: 2.3000 }, { id: 'F', lat: 48.4010, lng: 2.3000 }];
+  associer(st2, osm2);
+  assert.equal(st2[0].m, 'Garage du Centre', '~280 m, seule candidate');
+  assert.equal(st2[1].m, undefined, '~280 m mais une autre station officielle est plus proche de ce point');
+  assert.equal(st2[2].m, 'Avia', '~110 m');
 });

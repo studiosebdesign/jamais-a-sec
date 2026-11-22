@@ -11,38 +11,44 @@ area["ISO3166-1"="FR"][admin_level=2]->.fr;
 (node["amenity"="fuel"](area.fr);way["amenity"="fuel"](area.fr););
 out center tags;`;
 export const VALIDITE_JOURS = 7;
-const DISTANCE_MAX_M = 150;
+const DISTANCE_MAX_M = 150;      // toujours accepté
+const DISTANCE_MUTUELLE_M = 350;  // accepté si les deux sont mutuellement les plus proches (coordonnées officielles parfois approximatives)
 
-// Noms harmonisés pour les enseignes les plus courantes
+// Noms harmonisés pour les enseignes les plus courantes (cherchés n'importe où dans le nom :
+// « Station Total », « Relais Total Itteville », « Super U Mennecy »…)
 const MARQUES = [
-  [/^total\s*energies|^totalenergies|^total(\s+access)?$|^elf$/i, 'TotalEnergies'],
+  [/total\s*energies|\btotal\b|\belf\b/i, 'TotalEnergies'],
   [/leclerc/i, 'E.Leclerc'],
   [/intermarch/i, 'Intermarché'],
-  [/^carrefour/i, 'Carrefour'],
-  [/^auchan/i, 'Auchan'],
-  [/^(super u|hyper u|u express|système u|systeme u|station u|^u$)/i, 'Système U'],
-  [/^esso/i, 'Esso'],
-  [/^bp$|^bp\s/i, 'BP'],
-  [/^avia/i, 'Avia'],
-  [/^shell/i, 'Shell'],
-  [/^casino|g[ée]ant casino/i, 'Casino'],
-  [/^netto/i, 'Netto'],
-  [/^dyneff/i, 'Dyneff'],
-  [/^agip|^eni$/i, 'Eni'],
-  [/^cora/i, 'Cora'],
-  [/^match$/i, 'Match'],
-  [/^vito/i, 'Vito'],
-  [/^ad blue|^adblue/i, null]
+  [/carrefour/i, 'Carrefour'],
+  [/auchan/i, 'Auchan'],
+  [/\b(super u|hyper u|u express|syst[eè]me u|station u|magasins? u)\b|^u$/i, 'Système U'],
+  [/\besso\b/i, 'Esso'],
+  [/\bbp\b/i, 'BP'],
+  [/\bavia\b/i, 'Avia'],
+  [/\bshell\b/i, 'Shell'],
+  [/casino/i, 'Casino'],
+  [/\bnetto\b/i, 'Netto'],
+  [/dyneff/i, 'Dyneff'],
+  [/\bagip\b|\beni\b/i, 'Eni'],
+  [/\bcora\b/i, 'Cora'],
+  [/\bmatch\b/i, 'Match'],
+  [/\bvito\b/i, 'Vito'],
+  [/\bspar\b/i, 'Spar'],
+  [/\bcolruyt\b/i, 'Colruyt'],
+  [/\blidl\b/i, 'Lidl'],
+  [/\bal\s*fatah?\b/i, null]
 ];
-const GENERIQUES = /^(station[- ]service|station|carburant|essence|fuel|gas station|pompe)s?$/i;
+const GENERIQUES = /^(station[- ]?service|station|carburants?|essence|fuel|gas station|pompes?|distributeur|libre[- ]service|aire de service|lavage|gpl|adblue|ad blue)s?$/i;
+export const VERSION = 2;
 
+/** Nom à afficher : une enseigne connue, sinon la marque déclarée, sinon le nom de la station (« Garage du Centre »). */
 export function normaliserMarque(tags) {
-  for (const brut of [tags.brand, tags.name, tags.operator]) {
-    if (!brut) continue;
-    const t = String(brut).trim();
-    if (!t || GENERIQUES.test(t)) continue;
-    for (const [re, nom] of MARQUES) if (re.test(t)) return nom;
-    if (brut === tags.brand) return t.length <= 28 ? t : null; // marque inconnue mais déclarée
+  const champs = [tags.brand, tags.name, tags['brand:fr'], tags.operator].map(v => (v ? String(v).trim() : '')).filter(Boolean);
+  for (const t of champs) for (const [re, nom] of MARQUES) if (re.test(t)) return nom;
+  for (const t of [tags.brand, tags.name]) {
+    const v = t ? String(t).trim() : '';
+    if (v && !GENERIQUES.test(v) && v.length <= 28) return v;
   }
   return null;
 }
@@ -68,7 +74,7 @@ export function depuisOSM(json, maintenant = Date.now()) {
     if (!index.has(m)) { index.set(m, marques.length); marques.push(m); }
     points.push([Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5, index.get(m)]);
   }
-  return { version: 1, source: 'OpenStreetMap (ODbL), via Overpass API', genere: new Date(maintenant).toISOString(), marques, points };
+  return { version: VERSION, source: 'OpenStreetMap (ODbL), via Overpass API', genere: new Date(maintenant).toISOString(), marques, points };
 }
 
 export async function lireEnseignes(source) {
@@ -82,27 +88,36 @@ export async function lireEnseignes(source) {
   } catch { return null; }
 }
 
-/** Ajoute s.m (la marque) aux stations, par plus proche voisin à moins de 150 m. Renvoie le nombre trouvé. */
+/** Ajoute s.m (l'enseigne) aux stations. Renvoie le nombre trouvé.
+ *  - moins de 150 m : la station OSM la plus proche ;
+ *  - jusqu'à 350 m : seulement si la station OSM n'a pas de station officielle plus proche (évite les erreurs en ville). */
 export function associer(stations, enseignes) {
   if (!enseignes?.points?.length) return 0;
-  const grille = new Map(), cle = (a, b) => a + ':' + b, pas = 0.01; // cases d'environ 1 km
+  const pas = 0.01, cle = (a, b) => a + ':' + b; // cases d'environ 1 km
+  const grille = new Map();
   for (const p of enseignes.points) {
     const k = cle(Math.floor(p[0] / pas), Math.floor(p[1] / pas));
     if (!grille.has(k)) grille.set(k, []);
     grille.get(k).push(p);
   }
-  let n = 0;
+  const dist = (p, s) => Math.hypot((p[1] - s.lng) * 111320 * Math.cos(s.lat * Math.PI / 180), (p[0] - s.lat) * 110570);
+  const choix = [], plusProcheDuPoint = new Map();
   for (const s of stations) {
     const gi = Math.floor(s.lat / pas), gj = Math.floor(s.lng / pas);
-    let best = null, bd = DISTANCE_MAX_M;
+    let best = null, bd = DISTANCE_MUTUELLE_M;
     for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
       for (const p of grille.get(cle(gi + di, gj + dj)) || []) {
-        const dx = (p[1] - s.lng) * 111320 * Math.cos(s.lat * Math.PI / 180), dy = (p[0] - s.lat) * 110570;
-        const d = Math.hypot(dx, dy);
+        const d = dist(p, s);
         if (d < bd) { bd = d; best = p; }
+        const q = plusProcheDuPoint.get(p);
+        if (d <= DISTANCE_MUTUELLE_M && (!q || d < q.d)) plusProcheDuPoint.set(p, { s, d });
       }
     }
-    if (best) { s.m = enseignes.marques[best[2]]; n++; }
+    if (best) choix.push([s, best, bd]);
+  }
+  let n = 0;
+  for (const [s, p, d] of choix) {
+    if (d <= DISTANCE_MAX_M || plusProcheDuPoint.get(p)?.s === s) { s.m = enseignes.marques[p[2]]; n++; }
   }
   return n;
 }

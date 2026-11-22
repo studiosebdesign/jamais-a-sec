@@ -20,7 +20,7 @@ import { ouvrirXmlDansZip } from './zip.js';
 import { lireStation, decoupeur } from './lecteur.js';
 import { departement } from './departements.js';
 import { medianesDuJour, lireHistorique, fusionner, jourParis } from './historique.js';
-import { lireEnseignes, telechargerOSM, associer, VALIDITE_JOURS } from './enseignes.js';
+import { lireEnseignes, telechargerOSM, associer, VALIDITE_JOURS, VERSION as VERSION_ENSEIGNES } from './enseignes.js';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 
@@ -157,7 +157,7 @@ async function principal() {
   // Enseignes : on relit celles déjà publiées ; si elles ont plus de 7 jours, on les rafraîchit depuis OpenStreetMap
   let enseignes = await lireEnseignes(opt.enseignes || path.join(opt.sortie, 'data', 'enseignes.json'));
   const ageJours = enseignes ? (maintenant - new Date(enseignes.genere).getTime()) / 86400000 : Infinity;
-  if (ageJours > VALIDITE_JOURS && (!opt.fichier || opt.enseignes)) {
+  if ((ageJours > VALIDITE_JOURS || (enseignes?.version || 1) < VERSION_ENSEIGNES) && (!opt.fichier || opt.enseignes)) {
     try {
       console.log('  Mise à jour des enseignes depuis OpenStreetMap…');
       enseignes = await telechargerOSM();
