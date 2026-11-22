@@ -40,6 +40,8 @@ export function fabriquerFlux({ maintenant = Date.now(), remplissage = 5200 } = 
     pdv({ id: 'S8', lat: 4851200, lng: 246000, cp: '91750', adresse: 'Place de l&apos;Église', ville: 'Champcueil', prix: [g('1.700')],
       fermeture: `<fermeture type="T" debut="${heureParis(maintenant - 5 * H)}" fin="${heureParis(maintenant + 48 * H)}"/>` }),
     pdv({ id: 'S9', lat: 4851500, lng: 244000, cp: '91750', adresse: 'Vieille pompe', ville: 'Champcueil', prix: [g('1.500', heureParis(maintenant - 40 * J))] }),
+    pdv({ id: 'S13', lat: 4852000, lng: 244500, cp: '91750', adresse: 'Vieille rupture', ville: 'Champcueil', prix: [g('1.755'), { nom: 'GPLc', id: 4, maj: recent, valeur: '0.990' }],
+      ruptures: [{ id: 4, nom: 'GPLc', debut: heureParis(maintenant - 400 * J), type: 'temporaire' }] }),
     pdv({ id: 'S10', lat: 4547000, lng: 437000, cp: '42000', adresse: 'Rue Michelet &amp; Cie', ville: 'SAINT-ÉTIENNE', prix: [g('1749')] }),
     pdv({ id: 'S11', lat: 4192000, lng: 873000, cp: '20000', adresse: 'Cours Napoléon', ville: 'Ajaccio', prix: [g('1.950')] }),
     pdv({ id: 'S12', lat: 4270000, lng: 945000, cp: '20600', adresse: 'Route du port', ville: 'Bastia', prix: [g('1.940')] })

@@ -44,7 +44,7 @@ test('le découpage au fil de l\'eau ne dépend pas de la taille des morceaux', 
     c(null); return n;
   };
   const ref = compter(texte.length);
-  assert.equal(ref, 12 + 5200);
+  assert.equal(ref, 13 + 5200);
   for (const t of [7, 333, 4096, 65536]) assert.equal(compter(t), ref);
 });
 
@@ -61,6 +61,7 @@ test('lecture du ZIP et filtres', async () => {
   assert.ok(!s('S5').p.e85 && !s('S5').r, 'S5 : E85 en rupture définitive = plus vendu');
   assert.ok(!s('S6').r, 'S6 : rupture terminée');
   assert.equal(s('S8').ferm, 1, 'S8 fermée temporairement');
+  assert.ok(!s('S13').r && !s('S13').p.gplc, 'S13 : rupture « temporaire » de plus de 15 jours = GPLc plus vendu');
   assert.equal(s('S3').aut, 1, 'S3 sur autoroute');
   assert.equal(s('S2').h24, 1);
   assert.equal(s('S10').p.gazole[0], 1.749, 'prix en millièmes converti');
@@ -75,14 +76,14 @@ test('écriture des fichiers par département + calcul autour de Champcueil', as
   const index = await ecrire(stations, ecartees, dossier, { maintenant: flux.maintenant, url: 'test' });
   assert.ok(index.departements['91'] && index.departements['2A'] && index.departements['2B']);
   const d91 = JSON.parse(await fs.readFile(path.join(dossier, 'data/dep/91.json'), 'utf8'));
-  assert.equal(d91.stations.length, 7);
+  assert.equal(d91.stations.length, 8);
 
   const r = await radar({ donnees: path.join(dossier, 'data'), ...CHAMPCUEIL, carburant: 'gazole', reservoir: 50, niveau: 0.25, conso: 6, rayon: 15, maintenant: flux.maintenant });
   assert.ok(r.departementsCharges.includes('91'));
   assert.equal(r.volume, 37.5);
   assert.equal(r.reference.prix, 1.76, 'référence = la plus proche (S1)');
   assert.equal(r.nbRupture, 1);
-  assert.equal(r.nbStations, 7); // S1 S2 S3 S4 S5 S6 S8
+  assert.equal(r.nbStations, 8); // S1 S2 S3 S4 S5 S6 S8 S13
   const s2 = r.classement.find(x => x.station.id === 'S2');
   const s1 = r.classement.find(x => x.station.id === 'S1');
   const detour = (s2.distanceKm - s1.distanceKm) * 2 * REGLAGES.facteurRoute;
@@ -91,7 +92,7 @@ test('écriture des fichiers par département + calcul autour de Champcueil', as
   assert.equal(s2.verdict, 'rentable');
   assert.equal(s2.pepite, true);
   assert.equal(r.meilleure.station.id, 'S2');
-  assert.equal(r.mediane, 1.7375, 'médiane hors autoroute, hors rupture, hors fermée : (1.73 + 1.745) / 2');
+  assert.equal(r.mediane, 1.745, 'médiane hors autoroute, hors rupture, hors fermée : 1.659 1.73 1.745 1.755 1.76');
   assert.equal(r.classement.find(x => x.station.id === 'S3').verdict, 'perte');
 
   // Station habituelle
@@ -124,11 +125,11 @@ test('le script complet en ligne de commande', async () => {
   const zip = path.join(dossier, 'flux.zip');
   await fs.writeFile(zip, flux.zip);
   const { stdout } = await promisify(execFile)(process.execPath, [path.join(ICI, '../src/index.js'), '--fichier', zip, '--sortie', path.join(dossier, 'site')]);
-  assert.match(stdout, /Stations retenues : 5210/);
+  assert.match(stdout, /Stations retenues : 5211/);
   assert.match(stdout, /Historique : 1 jour/);
   await fs.access(path.join(dossier, 'site/data/tendances.json'));
   const idx = JSON.parse(await fs.readFile(path.join(dossier, 'site/data/index.json'), 'utf8'));
-  assert.equal(idx.nbStations, 5210);
+  assert.equal(idx.nbStations, 5211);
   // Garde-fou : un flux trop petit ne publie rien
   await assert.rejects(promisify(execFile)(process.execPath, [path.join(ICI, '../src/index.js'), '--fichier', zip, '--sortie', path.join(dossier, 'site2'), '--min-stations', '999999']));
   await assert.rejects(fs.access(path.join(dossier, 'site2/data/index.json')));
@@ -172,5 +173,11 @@ test('historique : ajout du jour, remplacement dans la journée, 30 jours max', 
   assert.equal(h.deps['91'].gazole.at(-1), 1.8);
   assert.equal(h.deps['42'].e10.filter(v => v !== null).length, 1);
   const med = medianesDuJour(flux2.stations, flux.maintenant);
-  assert.equal(med['91'].gazole, 1.738, 'même médiane que le calcul (arrondie au millième)');
+  assert.equal(med['91'].gazole, 1.745, 'même médiane que le calcul');
+});
+
+test('l\'app utilise exactement le même module de calcul que le script', async () => {
+  const a = await fs.readFile(path.join(ICI, '../src/calcul.js'), 'utf8');
+  const b = await fs.readFile(path.join(ICI, '../../app/js/calcul.js'), 'utf8');
+  assert.equal(b, a, 'copier donnees/src/calcul.js vers app/js/calcul.js');
 });
