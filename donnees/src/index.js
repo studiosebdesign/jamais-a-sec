@@ -20,7 +20,7 @@ import { ouvrirXmlDansZip } from './zip.js';
 import { lireStation, decoupeur } from './lecteur.js';
 import { departement } from './departements.js';
 import { medianesDuJour, lireHistorique, fusionner, jourParis } from './historique.js';
-import { lireEnseignes, telechargerOSM, associer, VALIDITE_JOURS, VERSION as VERSION_ENSEIGNES } from './enseignes.js';
+import { lireEnseignes, telechargerOSM, telechargerReferentiel, assembler, associer, VALIDITE_JOURS, VERSION as VERSION_ENSEIGNES } from './enseignes.js';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 
@@ -154,14 +154,24 @@ async function principal() {
     console.error(`ERREUR : seulement ${stations.length} stations (minimum ${opt.minStations}). Rien n'est publié.`);
     process.exit(1);
   }
-  // Enseignes : on relit celles déjà publiées ; si elles ont plus de 7 jours, on les rafraîchit depuis OpenStreetMap
+  // Enseignes et positions : on relit celles déjà publiées ; toutes les semaines, on les reconstruit
+  // depuis le référentiel data.gouv (numéro officiel → nom + position) et OpenStreetMap en complément.
   let enseignes = await lireEnseignes(opt.enseignes || path.join(opt.sortie, 'data', 'enseignes.json'));
   const ageJours = enseignes ? (maintenant - new Date(enseignes.genere).getTime()) / 86400000 : Infinity;
   if ((ageJours > VALIDITE_JOURS || (enseignes?.version || 1) < VERSION_ENSEIGNES) && (!opt.fichier || opt.enseignes)) {
+    let referentiel = null, osm = null;
     try {
-      console.log('  Mise à jour des enseignes depuis OpenStreetMap…');
-      enseignes = await telechargerOSM();
-    } catch (e) { console.warn('  Enseignes OSM indisponibles (' + e.message + '), on garde les précédentes.'); }
+      console.log('  Téléchargement du référentiel des noms (data.gouv.fr)…');
+      referentiel = await telechargerReferentiel();
+      console.log(`  Référentiel : ${Object.keys(referentiel.refs).length} stations`);
+    } catch (e) { console.warn('  Référentiel indisponible (' + e.message + ')'); }
+    try {
+      console.log('  Téléchargement des stations OpenStreetMap…');
+      osm = await telechargerOSM();
+      console.log(`  OpenStreetMap : ${Object.keys(osm.refs).length} numéros officiels, ${osm.points.length} autres stations`);
+    } catch (e) { console.warn('  OpenStreetMap indisponible (' + e.message + ')'); }
+    if (referentiel || osm) enseignes = assembler({ referentiel, osm }, maintenant);
+    else console.warn('  Aucune source disponible, on garde les enseignes précédentes.');
   }
   const assoc = associer(stations, enseignes);
   console.log(`  Enseignes : ${assoc.marques} stations sur ${stations.length} (${Math.round(assoc.marques / Math.max(1, stations.length) * 100)} %) · positions corrigées : ${assoc.positions}`);

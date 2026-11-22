@@ -1,10 +1,12 @@
-// Enseignes des stations (Intermarché, TotalEnergies, E.Leclerc…)
-// Le flux officiel ne donne pas la marque. On la prend dans OpenStreetMap (licence ODbL) :
-// une fois par semaine, on télécharge toutes les stations-service de France connues d'OSM,
-// puis on associe chaque station officielle à la station OSM la plus proche (moins de 150 m).
+// Enseignes des stations (Intermarché, TotalEnergies, E.Leclerc…) et positions corrigées.
+// Le flux officiel ne donne ni la marque ni toujours la bonne position. Deux sources, une fois par semaine :
+//  1) le « Référentiel des noms et enseignes de stations-service » publié sur data.gouv.fr (Chiffrex, ODbL),
+//     qui relie le numéro officiel de chaque station à son nom et à sa position OpenStreetMap ;
+//  2) en complément, OpenStreetMap directement (Overpass) : numéro officiel si renseigné, sinon proximité.
 
 import fs from 'node:fs/promises';
 
+export const REFERENTIEL = 'https://www.data.gouv.fr/api/1/datasets/r/0207ded0-2d19-47af-b1a6-62915ec1b721';
 export const OVERPASS = 'https://overpass-api.de/api/interpreter';
 const REQUETE = `[out:json][timeout:300];
 area["ISO3166-1"="FR"][admin_level=2]->.fr;
@@ -20,7 +22,7 @@ const MARQUES = [
   [/total\s*energies|\btotal\b|\belf\b/i, 'TotalEnergies'],
   [/leclerc/i, 'E.Leclerc'],
   [/intermarch/i, 'Intermarché'],
-  [/carrefour/i, 'Carrefour'],
+  [/carrefour|^market$/i, 'Carrefour'],
   [/auchan/i, 'Auchan'],
   [/\b(super u|hyper u|u express|syst[eè]me u|station u|magasins? u)\b|^u$/i, 'Système U'],
   [/\besso\b/i, 'Esso'],
@@ -40,7 +42,7 @@ const MARQUES = [
   [/\bal\s*fatah?\b/i, null]
 ];
 const GENERIQUES = /^(station[- ]?service|station|carburants?|essence|fuel|gas station|pompes?|distributeur|libre[- ]service|aire de service|lavage|gpl|adblue|ad blue)s?$/i;
-export const VERSION = 3;
+export const VERSION = 4;
 
 /** Nom à afficher : une enseigne connue, sinon la marque déclarée, sinon le nom de la station (« Garage du Centre »). */
 export function normaliserMarque(tags) {
@@ -81,6 +83,70 @@ export function depuisOSM(json, maintenant = Date.now()) {
   return { version: VERSION, source: 'OpenStreetMap (ODbL), via Overpass API', genere: new Date(maintenant).toISOString(), marques, refs, points };
 }
 
+/** Découpe une ligne CSV (guillemets gérés). */
+function champsCSV(ligne) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < ligne.length; i++) {
+    const c = ligne[i];
+    if (q) { if (c === '"') { if (ligne[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+/** Lit le référentiel data.gouv : { marques, refs: { idOfficiel: [lat, lng, indexMarque] } } */
+export function depuisReferentiel(texte) {
+  const lignes = texte.replace(/^﻿/, '').split(/\r?\n/).filter(Boolean);
+  const entete = champsCSV(lignes[0]).map(x => x.trim().toLowerCase());
+  const col = n => entete.indexOf(n);
+  const cId = col('id_station_officiel'), cNom = col('nom_normalise'), cLat = col('latitude_osm'), cLng = col('longitude_osm');
+  if (cId < 0 || cNom < 0) throw new Error('colonnes inattendues : ' + entete.join(','));
+  const marques = [], index = new Map(), refs = {};
+  for (const l of lignes.slice(1)) {
+    const f = champsCSV(l);
+    const id = (f[cId] || '').trim();
+    if (!/^\d{6,9}$/.test(id)) continue;
+    const m = normaliserMarque({ brand: f[cNom] });
+    let i = -1;
+    if (m) { if (!index.has(m)) { index.set(m, marques.length); marques.push(m); } i = index.get(m); }
+    const lat = parseFloat(f[cLat]), lng = parseFloat(f[cLng]);
+    if (i < 0 && !(isFinite(lat) && isFinite(lng))) continue;
+    refs[id] = [isFinite(lat) ? Math.round(lat * 1e5) / 1e5 : null, isFinite(lng) ? Math.round(lng * 1e5) / 1e5 : null, i];
+  }
+  return { marques, refs };
+}
+
+export async function telechargerReferentiel() {
+  const rep = await fetch(REFERENTIEL, { redirect: 'follow', headers: { 'User-Agent': 'JamaisASec/1.0 (studio.sebdesign@gmail.com)' }, signal: AbortSignal.timeout(120000) });
+  if (!rep.ok) throw new Error('data.gouv HTTP ' + rep.status);
+  return depuisReferentiel(await rep.text());
+}
+
+/** Assemble les sources disponibles (référentiel prioritaire pour les numéros officiels, OSM en complément). */
+export function assembler({ referentiel, osm }, maintenant = Date.now()) {
+  const marques = [], index = new Map();
+  const idx = (src, i) => {
+    if (i < 0) return -1;
+    const m = src.marques[i];
+    if (!index.has(m)) { index.set(m, marques.length); marques.push(m); }
+    return index.get(m);
+  };
+  const refs = {}, points = [];
+  if (osm) {
+    for (const [id, p] of Object.entries(osm.refs || {})) refs[id] = [p[0], p[1], idx(osm, p[2])];
+    for (const p of osm.points || []) points.push([p[0], p[1], idx(osm, p[2])]);
+  }
+  if (referentiel) for (const [id, p] of Object.entries(referentiel.refs)) {
+    const autre = refs[id];
+    refs[id] = [p[0] ?? autre?.[0] ?? null, p[1] ?? autre?.[1] ?? null, p[2] >= 0 ? idx(referentiel, p[2]) : (autre?.[2] ?? -1)];
+  }
+  const source = [referentiel && 'Référentiel des noms et enseignes de stations-service (Chiffrex, data.gouv.fr, ODbL)', osm && 'OpenStreetMap (ODbL), via Overpass API'].filter(Boolean).join(' + ');
+  return { version: VERSION, source, genere: new Date(maintenant).toISOString(), marques, refs, points };
+}
+
 export async function lireEnseignes(source) {
   if (!source) return null;
   try {
@@ -104,8 +170,10 @@ export function associer(stations, enseignes) {
     const p = enseignes.refs?.[s.id];
     if (!p) { restantes.push(s); continue; }
     if (p[2] >= 0) { s.m = enseignes.marques[p[2]]; res.marques++; }
-    const d = dist(p, s);
-    if (d > 40 && d < 8000) { s.lat = p[0]; s.lng = p[1]; res.positions++; }
+    if (p[0] != null && p[1] != null) {
+      const d = dist(p, s);
+      if (d > 40 && d < 8000) { s.lat = p[0]; s.lng = p[1]; res.positions++; }
+    }
     if (p[2] < 0) restantes.push(s); // position corrigée mais pas de nom : on tente la proximité
   }
   if (!enseignes.points?.length) return res;
