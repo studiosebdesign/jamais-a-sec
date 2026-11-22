@@ -65,6 +65,48 @@ function etiquetteAge(min) {
   if (min <= PRIX_RECENT_H * 60) return `<span class="age a2">${depuis(min)}</span>`;
   return `<span class="age a3">${Math.round(min / 1440)} j · à confirmer</span>`;
 }
+// =================== CURSEURS : partie gauche remplie ===================
+function remplir(r) { const min = +r.min || 0, max = +r.max || 100; r.style.setProperty('--p', ((r.value - min) / (max - min) * 100) + '%'); }
+document.addEventListener('input', e => { if (e.target.matches?.('input[type=range]')) remplir(e.target); }, true);
+new MutationObserver(() => document.querySelectorAll('input[type=range]').forEach(remplir)).observe(document.body, { childList: true, subtree: true });
+
+// =================== HORAIRES ===================
+const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+const heure = m => { m = m % 1440; const h = Math.floor(m / 60), mn = m % 60; return h + ' h' + (mn ? ' ' + String(mn).padStart(2, '0') : ''); };
+const heureFin = m => m >= 1439 ? 'minuit' : heure(m);
+/** État d'ouverture maintenant : { etat: 'ouvert' | 'ferme' | 'inconnu', texte } */
+function ouverture(s, date = new Date()) {
+  if (s.ferm) return { etat: 'ferme', texte: 'Fermée temporairement' };
+  const o = s.o;
+  const auto = s.h24 ? ' · automate 24 h/24 (carte bancaire)' : '';
+  if (!o) return s.h24 ? { etat: 'ouvert', texte: 'Automate 24 h/24 (carte bancaire)' } : { etat: 'inconnu', texte: 'Horaires non communiqués' };
+  const j = (date.getDay() + 6) % 7, m = date.getHours() * 60 + date.getMinutes();
+  // Plages d'aujourd'hui et débordement de la veille après minuit
+  const plages = [];
+  const ajout = (jour, decal) => { const p = o[jour]; if (!Array.isArray(p)) return; for (let i = 0; i < p.length; i += 2) { const a = p[i], b = p[i + 1] <= p[i] ? p[i + 1] + 1440 : p[i + 1]; plages.push([a + decal, b + decal]); } };
+  ajout((j + 6) % 7, -1440); ajout(j, 0);
+  const encours = plages.find(([a, b]) => m >= a && m < b);
+  if (encours) return { etat: 'ouvert', texte: (encours[1] - encours[0] >= 1439 ? 'Ouvert 24 h/24' : 'Ouvert · ferme à ' + heureFin(encours[1])) };
+  // Prochaine ouverture sur 7 jours
+  for (let k = 0; k < 7; k++) {
+    const p = o[(j + k) % 7];
+    if (!Array.isArray(p)) continue;
+    for (let i = 0; i < p.length; i += 2) {
+      if (k === 0 && p[i] <= m) continue;
+      const quand = k === 0 ? 'à ' + heure(p[i]) : k === 1 ? 'demain à ' + heure(p[i]) : JOURS[(j + k) % 7] + ' à ' + heure(p[i]);
+      return { etat: s.h24 ? 'ouvert' : 'ferme', texte: (s.h24 ? 'Boutique fermée' : 'Fermé') + ' · ouvre ' + quand + auto, court: s.h24 ? 'Automate 24 h/24 · boutique fermée' : 'Fermé · ouvre ' + quand };
+    }
+  }
+  return { etat: s.h24 ? 'ouvert' : 'inconnu', texte: s.h24 ? 'Automate 24 h/24 (carte bancaire)' : 'Horaires non communiqués' };
+}
+function htmlHoraires(s) {
+  if (!s.o) return '';
+  const auj = (new Date().getDay() + 6) % 7;
+  return `<table class="horaires">${s.o.map((p, i) => `<tr${i === auj ? ' class="auj"' : ''}><th>${JOURS[i]}</th><td>${
+    p === 0 ? 'Fermé' : !Array.isArray(p) ? '—' : p.reduce((t, v, k) => k % 2 ? t : t.concat(heure(v) + ' – ' + heureFin(p[k + 1])), []).join(', ')}</td></tr>`).join('')}</table>
+    ${s.h24 ? '<p class="gris" style="font-size:13px;margin:6px 0 0">Automate 24 h/24 : carburant disponible par carte bancaire en dehors de ces horaires.</p>' : ''}`;
+}
+
 function ageCourt(min) { return min < 60 ? Math.round(min) + ' min' : min < 1440 ? Math.round(min / 60) + ' h' : Math.round(min / 1440) + ' j'; }
 function departementDe(cp) {
   const c = String(cp || '').padStart(5, '0');
@@ -286,7 +328,7 @@ function rendreVerdict() {
   h += `<div class="trio"><div><b>${p3(cible.prix)}</b><small>€ / litre</small></div><div><b>${dTxt}</b><small>${dLeg}</small></div>
       <div class="${age <= 180 ? 'maj-frais' : ''}"><b>${ageCourt(age)}</b><small>depuis la MAJ</small></div></div></div>
   <div class="corps">
-    <div><div class="station-titre">${esc(nomStation(cible.station))}</div><div class="gris">${trajet ? 'Sur votre trajet' : km(cible.distanceKm)} · ${cible === ref ? libRef(R).replace('la station', 'station').replace('votre station', 'votre station') : 'contre ' + p3(ref.prix) + ' € chez ' + esc(nomStation(ref.station)) + ', ' + (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche de vous')}</div></div>
+    <div><div class="station-titre">${esc(nomStation(cible.station))}</div>${(o => o.etat !== 'inconnu' ? `<div class="ouverture petit ${o.etat}"><span class="pastille"></span><span>${esc(o.court || o.texte)}</span></div>` : '')(ouverture(cible.station))}<div class="gris">${trajet ? 'Sur votre trajet' : km(cible.distanceKm)} · ${cible === ref ? libRef(R).replace('la station', 'station').replace('votre station', 'votre station') : 'contre ' + p3(ref.prix) + ' € chez ' + esc(nomStation(ref.station)) + ', ' + (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche de vous')}</div></div>
     <div class="actions"><button class="btn-noir" data-yaller="${esc(cible.station.id)}">${IC_GO}Y aller</button><button class="btn-blanc" data-partage="${esc(cible.station.id)}" aria-label="Alerter un proche">${IC_PARTAGE}</button></div>
     ${htmlConseilE10(cible)}
     <div class="simu"><div class="l"><label for="vol">Volume à remplir</label><output id="o-vol">${litres(volume())}</output></div>
@@ -315,7 +357,7 @@ function rendreVerdict() {
     const val = p3(x.prix) + ' €' + sous;
     if (!recent(x)) cls += ' vieille';
     const lieu = x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche') : (trajet ? '+' + km(x.detourKm) + ' de route' : 'détour ' + km(x.detourKm));
-    return `<button class="${cls}" data-station="${esc(x.station.id)}"><div style="min-width:0">${x.verdict === 'reference' && !R.tension ? '<span class="badge-ref">Comparée à</span>' : ''}<div class="nom">${esc(nomStation(x.station))}</div><div class="meta">${R.tension ? km(x.distanceKm) : x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche') + ' · ' + km(x.distanceKm) : lieu} · ${etiquetteAge(ageX)}</div></div><div class="val">${val}</div></button>`;
+    return `<button class="${cls}" data-station="${esc(x.station.id)}"><div style="min-width:0">${x.verdict === 'reference' && !R.tension ? '<span class="badge-ref">Comparée à</span>' : ''}<div class="nom">${esc(nomStation(x.station))}</div><div class="meta">${ouverture(x.station).etat === 'ferme' ? '<span class="tag-ferme">fermé</span> ' : ''}${R.tension ? km(x.distanceKm) : x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche') + ' · ' + km(x.distanceKm) : lieu} · ${etiquetteAge(ageX)}</div></div><div class="val">${val}</div></button>`;
   }).join('') || '<p class="gris">Aucune autre station.</p>';
   brancherVerdict(el, R);
 }
@@ -352,7 +394,10 @@ function ouvrirStation(id) {
   const x = R?.classement.find(c => c.station === s);
   const now = maintenantMin();
   const d = P.position ? distanceKm(P.position.lat, P.position.lng, s.lat, s.lng) : null;
-  let html = `<div class="gris">${esc(adresse(s))}${d !== null ? ' · ' + km(d) : ''}${s.aut ? ' · autoroute' : ''}${s.h24 ? ' · automate 24 h/24' : ''}${s.ferm ? ' · <b>fermée temporairement</b>' : ''}</div>`;
+  const ouv = ouverture(s);
+  let html = `<div class="gris">${esc(adresse(s))}${d !== null ? ' · ' + km(d) : ''}${s.aut ? ' · autoroute' : ''}</div>
+    <div class="ouverture ${ouv.etat}"><span class="pastille"></span><b style="flex:1;min-width:0">${esc(ouv.texte)}</b>${s.o ? '<button class="lien" data-horaires aria-expanded="false">Horaires ▾</button>' : ''}</div>
+    <div class="bloc-horaires" hidden>${htmlHoraires(s)}</div>`;
   if (x) {
     const nom = x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'Station habituelle' : 'La plus proche') : !recent(x) ? 'Prix à confirmer' : x.gain > 1.5 ? 'Ça vaut le détour' : x.gain > 0 ? 'Petit gain' : 'Fausse bonne affaire';
     html += `<div class="carte-partage"><div><div class="cond" style="font-weight:700;font-size:20px;text-transform:uppercase">${nom}</div>
@@ -370,6 +415,8 @@ function ouvrirStation(id) {
     <button class="btn-blanc" data-hab style="font-size:17px">${P.habId === s.id ? 'Ma station habituelle · retirer' : 'Définir comme station habituelle'}</button>`;
   const c = ouvrirFeuille(s.m || titre(s.adr) || titre(s.ville), html);
   c.querySelector('[data-yaller]').addEventListener('click', () => ouvrirYaller(s.id));
+  const bh = c.querySelector('[data-horaires]');
+  if (bh) bh.addEventListener('click', () => { const b = c.querySelector('.bloc-horaires'); b.hidden = !b.hidden; bh.setAttribute('aria-expanded', String(!b.hidden)); bh.textContent = b.hidden ? 'Horaires ▾' : 'Horaires ▴'; });
   const bp = c.querySelector('[data-partage]'); if (x) bp.addEventListener('click', () => ouvrirPartage(s.id));
   c.querySelector('[data-hab]').addEventListener('click', () => {
     P.habId = P.habId === s.id ? null : s.id; sauver(); fermerFeuille(); rafraichir();
