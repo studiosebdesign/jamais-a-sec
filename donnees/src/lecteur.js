@@ -110,7 +110,34 @@ export function lireStation(bloc, options) {
   if (Object.keys(ruptures).length) station.r = ruptures;
   if (fermee) station.ferm = 1;
   if (/<horaires\b[^>]*automate-24-24="1"/.test(bloc)) station.h24 = 1;
+  const o = lireHoraires(bloc);
+  if (o) station.o = o;
   return { station };
+}
+
+/**
+ * Horaires d'ouverture : tableau de 7 jours (lundi → dimanche).
+ * Chaque jour : 0 = fermé, [ouverture, fermeture, …] en minutes depuis minuit, null = non communiqué.
+ * Renvoie undefined si aucun jour n'est renseigné.
+ */
+export function lireHoraires(bloc) {
+  const h = bloc.match(/<horaires\b[^>]*>([\s\S]*?)<\/horaires>/);
+  if (!h) return undefined;
+  const min = t => { const m = String(t || '').match(/^(\d{1,2})[.:h](\d{2})/); return m ? Math.min(1440, +m[1] * 60 + +m[2]) : null; };
+  const jours = [null, null, null, null, null, null, null];
+  let utile = false;
+  for (const j of h[1].matchAll(/<jour\b([^>]*?)(?:\/>|>([\s\S]*?)<\/jour>)/g)) {
+    const id = +((j[1].match(/\bid="(\d)"/) || [])[1]);
+    if (!(id >= 1 && id <= 7)) continue;
+    if (/\bferme="1"/.test(j[1])) { jours[id - 1] = 0; utile = true; continue; }
+    const plages = [];
+    for (const p of (j[2] || '').matchAll(/<horaire\b[^>]*ouverture="([^"]*)"[^>]*fermeture="([^"]*)"/g)) {
+      const a = min(p[1]), b = min(p[2]);
+      if (a !== null && b !== null && !(a === 0 && b === 0)) plages.push(a, b);
+    }
+    if (plages.length) { jours[id - 1] = plages; utile = true; }
+  }
+  return utile ? jours : undefined;
 }
 
 /**
