@@ -16,6 +16,7 @@ import { departement } from '../src/departements.js';
 import { analyser, distanceKm, REGLAGES, tendance } from '../src/calcul.js';
 import { radar } from '../src/radar.js';
 import { fusionner, medianesDuJour } from '../src/historique.js';
+import { depuisOSM, associer, normaliserMarque } from '../src/enseignes.js';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 const flux = fabriquerFlux();
@@ -186,4 +187,22 @@ test('l\'app utilise exactement le même module de calcul que le script', async 
   const a = await fs.readFile(path.join(ICI, '../src/calcul.js'), 'utf8');
   const b = await fs.readFile(path.join(ICI, '../../app/js/calcul.js'), 'utf8');
   assert.equal(b, a, 'copier donnees/src/calcul.js vers app/js/calcul.js');
+});
+
+test('enseignes OpenStreetMap : noms harmonisés et association à moins de 150 m', () => {
+  assert.equal(normaliserMarque({ brand: 'Total Access' }), 'TotalEnergies');
+  assert.equal(normaliserMarque({ name: 'Intermarche Super' }), 'Intermarché');
+  assert.equal(normaliserMarque({ name: 'Station-service' }), null);
+  assert.equal(normaliserMarque({ brand: 'E.Leclerc', name: 'Leclerc Mennecy' }), 'E.Leclerc');
+  const osm = depuisOSM({ elements: [
+    { type: 'node', lat: 48.5170, lon: 2.4492, tags: { amenity: 'fuel', brand: 'TotalEnergies' } },
+    { type: 'way', center: { lat: 48.5690, lon: 2.4400 }, tags: { amenity: 'fuel', name: 'Intermarché' } },
+    { type: 'node', lat: 48.6000, lon: 2.5000, tags: { amenity: 'fuel', name: 'Station' } }
+  ] });
+  assert.equal(osm.points.length, 2);
+  const st = [{ id: 'A', lat: 48.517, lng: 2.449 }, { id: 'B', lat: 48.5695, lng: 2.4402 }, { id: 'C', lat: 48.53, lng: 2.46 }];
+  assert.equal(associer(st, osm), 2);
+  assert.equal(st[0].m, 'TotalEnergies');
+  assert.equal(st[1].m, 'Intermarché', 'à ~60 m');
+  assert.equal(st[2].m, undefined, 'trop loin : pas d\'enseigne');
 });

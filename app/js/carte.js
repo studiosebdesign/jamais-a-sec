@@ -213,7 +213,7 @@ export async function creerRadar({ app }) {
     const R = app.calculer();
     const best = R && R.classement.find(x => x.verdict !== 'reference' && x.gain > 1.5 && x.ageHeures <= 48);
     if (best && T >= 0.999) {
-      elPep.querySelector('b').textContent = '+' + best.gain.toFixed(2).replace('.', ',') + ' €';
+      elPep.querySelector('b').textContent = 'Éco ' + best.gain.toFixed(2).replace('.', ',') + ' €';
       pepite.setLngLat([best.station.lng, best.station.lat]).addTo(map);
     } else pepite.remove();
 

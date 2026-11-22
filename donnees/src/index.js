@@ -10,6 +10,7 @@
 //   node src/index.js --fichier flux.zip   lit un fichier local (ZIP ou XML)
 //   node src/index.js --sortie dossier     choisit le dossier de sortie
 //   node src/index.js --historique URL     relit l'historique publié (tendances.json) pour le compléter
+//   node src/index.js --enseignes URL      relit les enseignes publiées (rafraîchies depuis OpenStreetMap chaque semaine)
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,6 +20,7 @@ import { ouvrirXmlDansZip } from './zip.js';
 import { lireStation, decoupeur } from './lecteur.js';
 import { departement } from './departements.js';
 import { medianesDuJour, lireHistorique, fusionner, jourParis } from './historique.js';
+import { lireEnseignes, telechargerOSM, associer, VALIDITE_JOURS } from './enseignes.js';
 
 const ICI = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,7 +31,7 @@ export const SOURCES = [
 const MENTION = 'Ministère de l\'Économie et des Finances — données « Prix des carburants en France », Licence Ouverte 2.0 (data.gouv.fr)';
 
 function lireArguments(argv) {
-  const o = { sortie: path.resolve(ICI, '../../site'), fichier: null, minStations: 5000, prixMaxJours: 30, historique: null };
+  const o = { sortie: path.resolve(ICI, '../../site'), fichier: null, minStations: 5000, prixMaxJours: 30, historique: null, enseignes: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = argv[i + 1];
     if (a === '--sortie') { o.sortie = path.resolve(v); i++; }
@@ -37,6 +39,7 @@ function lireArguments(argv) {
     else if (a === '--min-stations') { o.minStations = parseInt(v, 10); i++; }
     else if (a === '--prix-max-jours') { o.prixMaxJours = parseFloat(v); i++; }
     else if (a === '--historique') { o.historique = v; i++; }
+    else if (a === '--enseignes') { o.enseignes = v; i++; }
   }
   return o;
 }
@@ -97,7 +100,7 @@ export async function ecrire(stations, ecartees, dossierSortie, meta) {
     format: {
       p: 'prix par carburant : [prix en €/L, mise à jour en minutes depuis 1970 UTC]',
       r: 'ruptures temporaires en cours : début en minutes depuis 1970 UTC (0 = inconnu)',
-      aut: '1 = station d\'autoroute', ferm: '1 = fermeture temporaire en cours', h24: '1 = automate 24h/24'
+      m: 'enseigne (OpenStreetMap, ODbL), si connue', aut: '1 = station d\'autoroute', ferm: '1 = fermeture temporaire en cours', h24: '1 = automate 24h/24'
     },
     nbStations: stations.length,
     ecartees,
@@ -118,6 +121,7 @@ export async function ecrire(stations, ecartees, dossierSortie, meta) {
   }
   await fs.writeFile(path.join(temp, 'index.json'), JSON.stringify(index, null, 1));
   if (meta.tendances) await fs.writeFile(path.join(temp, 'tendances.json'), JSON.stringify(meta.tendances));
+  if (meta.enseignes) await fs.writeFile(path.join(temp, 'enseignes.json'), JSON.stringify(meta.enseignes));
   await fs.rm(final, { recursive: true, force: true });
   await fs.rename(temp, final);
   return index;
@@ -150,11 +154,23 @@ async function principal() {
     console.error(`ERREUR : seulement ${stations.length} stations (minimum ${opt.minStations}). Rien n'est publié.`);
     process.exit(1);
   }
+  // Enseignes : on relit celles déjà publiées ; si elles ont plus de 7 jours, on les rafraîchit depuis OpenStreetMap
+  let enseignes = await lireEnseignes(opt.enseignes || path.join(opt.sortie, 'data', 'enseignes.json'));
+  const ageJours = enseignes ? (maintenant - new Date(enseignes.genere).getTime()) / 86400000 : Infinity;
+  if (ageJours > VALIDITE_JOURS && (!opt.fichier || opt.enseignes)) {
+    try {
+      console.log('  Mise à jour des enseignes depuis OpenStreetMap…');
+      enseignes = await telechargerOSM();
+    } catch (e) { console.warn('  Enseignes OSM indisponibles (' + e.message + '), on garde les précédentes.'); }
+  }
+  const avecMarque = associer(stations, enseignes);
+  console.log(`  Enseignes : ${avecMarque} stations sur ${stations.length} (${Math.round(avecMarque / Math.max(1, stations.length) * 100)} %)`);
+
   // Historique : on relit celui déjà publié (s'il existe) et on y ajoute la médiane du jour
   const ancien = await lireHistorique(opt.historique || path.join(opt.sortie, 'data', 'tendances.json'));
   const tendances = fusionner(ancien, jourParis(maintenant), medianesDuJour(stations, maintenant));
   console.log(`  Historique : ${tendances.jours.length} jour(s)${ancien ? '' : ' (nouvel historique)'}`);
-  const index = await ecrire(stations, ecartees, opt.sortie, { maintenant, url, tendances });
+  const index = await ecrire(stations, ecartees, opt.sortie, { maintenant, url, tendances, enseignes });
   const tot = Object.values(index.departements).reduce((a, d) => a + (d.ruptures.gazole || 0), 0);
   console.log(`  Départements : ${Object.keys(index.departements).length} · stations en rupture de gazole : ${tot}`);
   console.log(`  Écrit dans ${path.join(opt.sortie, 'data')}`);

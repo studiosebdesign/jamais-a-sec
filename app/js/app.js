@@ -34,6 +34,8 @@ const S = { index: null, stations: [], depsCharges: new Map(), tendances: null, 
 // =================== OUTILS ===================
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[c]));
 const euros = n => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(2).replace('.', ',') + ' €';
+// Montant sans signe : on dit en toutes lettres si c'est une économie ou une perte
+const montant = n => Math.abs(n).toFixed(2).replace('.', ',') + ' €';
 const p3 = n => n.toFixed(3).replace('.', ',');
 const km = n => (Math.round(n * 10) / 10).toString().replace('.', ',') + ' km';
 const litres = v => String(v).replace('.', ',') + ' L';
@@ -50,7 +52,9 @@ function titre(t) {
     return a + (i > 0 && PETITS.has(mot) && a === ' ' ? b : b.toUpperCase());
   }).replace(/\b(rn|rd|zac|za|zi|cc)\b/gi, x => x.toUpperCase());
 }
-const nomStation = s => (s.adr ? titre(s.adr) + ', ' : '') + titre(s.ville);
+// Avec l'enseigne (OpenStreetMap) quand on la connaît, sinon l'adresse
+const adresse = s => (s.adr ? titre(s.adr) + ', ' : '') + titre(s.ville);
+const nomStation = s => s.m ? s.m + ' · ' + titre(s.ville) : adresse(s);
 function depuis(min) {
   if (min < 60) return 'il y a ' + Math.max(1, Math.round(min)) + ' min';
   if (min < 1440) return 'il y a ' + Math.round(min / 60) + ' h';
@@ -237,7 +241,7 @@ function htmlConseilE10(cible) {
   const eco = (cible.prix - e10[0]) * volume();
   if (eco <= 0.5) return '';
   return `<div class="conseil"><div class="c-titre">Votre voiture accepte peut-être le SP95-E10</div>
-    <div class="c-txt">Ici, il est à ${p3(e10[0])} € : environ <b>${euros(eco)}</b> d'économie sur ${litres(volume())}.</div>
+    <div class="c-txt">Ici, il est à ${p3(e10[0])} € : environ <b>${montant(eco)}</b> d'économie sur ${litres(volume())}.</div>
     <div class="deux"><button class="btn-blanc" data-e10-info style="height:48px;font-size:17px">Vérifier</button><button class="btn-noir" data-e10 style="height:48px;font-size:17px">Passer à l'E10</button></div></div>`;
 }
 function htmlEtat(titre, texte, bouton) {
@@ -270,7 +274,7 @@ function rendreVerdict() {
   const trajet = R.mode === 'trajet';
   if (best) {
     h += `<div class="panneau"><div class="surtitre">${trajet ? (best.gain > 1.5 ? 'Sur votre route' : 'Petit gain sur votre route') : (best.gain > 1.5 ? 'Ça vaut le détour' : 'Petit gain possible')}</div>
-      <div class="gros">${euros(best.gain)}</div><div class="sous">gagnés net sur ce plein, ${trajet ? 'détour compris' : 'trajet déduit'}</div></div>`;
+      <div class="gros">${montant(best.gain)}</div><div class="sous">d'économie sur ce plein, ${trajet ? 'détour compris' : 'trajet déduit'}</div></div>`;
   } else {
     h += `<div class="panneau"><div class="surtitre">${trajet ? 'Faites le plein en route' : 'Restez près de chez vous'}</div>
       <div class="gros" style="font-size:64px">${p3(ref.prix)} €</div>
@@ -306,8 +310,8 @@ function rendreVerdict() {
     if (R.tension) { if (ageX <= 60) cls += ' frais'; }
     else if (x.verdict === 'reference') sous = '<small class="g">référence</small>';
     else if (!recent(x)) sous = '<small class="g">à confirmer</small>';
-    else if (x.gain > 0) sous = `<small class="g plus">${euros(x.gain)} net</small>`;
-    else { cls += ' perte'; sous = `<small class="g moins">${euros(x.gain)} net</small>`; }
+    else if (x.gain > 0) sous = `<small class="g plus">Économie ${montant(x.gain)}</small>`;
+    else { cls += ' perte'; sous = `<small class="g moins">Perte ${montant(x.gain)}</small>`; }
     const val = p3(x.prix) + ' €' + sous;
     if (!recent(x)) cls += ' vieille';
     const lieu = x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'votre habituelle' : 'la plus proche') : (trajet ? '+' + km(x.detourKm) + ' de route' : 'détour ' + km(x.detourKm));
@@ -333,7 +337,7 @@ function brancherVerdict(el, R) {
       document.getElementById('o-vol').textContent = litres(S.vol);
       const R2 = calculer(), gros = el.querySelector('.panneau .gros');
       const b2 = R2 && R2.classement.find(x => x.verdict !== 'reference' && x.gain > 0 && recent(x));
-      if (gros && b2) gros.textContent = euros(b2.gain);
+      if (gros && b2) gros.textContent = montant(b2.gain);
     });
     // Au relâchement : on recalcule tout l'écran
     c.addEventListener('change', () => { const y = el.scrollTop; rendreVerdict(); el.scrollTop = y; });
@@ -348,12 +352,12 @@ function ouvrirStation(id) {
   const x = R?.classement.find(c => c.station === s);
   const now = maintenantMin();
   const d = P.position ? distanceKm(P.position.lat, P.position.lng, s.lat, s.lng) : null;
-  let html = `<div class="gris">${esc(titre(s.ville))}${d !== null ? ' · ' + km(d) : ''}${s.aut ? ' · autoroute' : ''}${s.h24 ? ' · automate 24 h/24' : ''}${s.ferm ? ' · <b>fermée temporairement</b>' : ''}</div>`;
+  let html = `<div class="gris">${esc(adresse(s))}${d !== null ? ' · ' + km(d) : ''}${s.aut ? ' · autoroute' : ''}${s.h24 ? ' · automate 24 h/24' : ''}${s.ferm ? ' · <b>fermée temporairement</b>' : ''}</div>`;
   if (x) {
     const nom = x.verdict === 'reference' ? (R.reference.type === 'habituelle' ? 'Station habituelle' : 'La plus proche') : !recent(x) ? 'Prix à confirmer' : x.gain > 1.5 ? 'Ça vaut le détour' : x.gain > 0 ? 'Petit gain' : 'Fausse bonne affaire';
     html += `<div class="carte-partage"><div><div class="cond" style="font-weight:700;font-size:20px;text-transform:uppercase">${nom}</div>
-      <div class="cond" style="font-weight:800;font-size:56px;line-height:.95;${x.gain <= 0 && x.verdict !== 'reference' ? 'color:var(--r)' : ''}">${x.verdict === 'reference' || !recent(x) ? p3(x.prix) + ' €' : euros(x.gain)}</div>
-      <div style="font-weight:600">${nomCarbu()} · ${p3(x.prix)} €/L${x.verdict !== 'reference' ? ' · détour ' + km(x.detourKm) : ''}</div></div></div>`;
+      <div class="cond" style="font-weight:800;font-size:56px;line-height:.95;${x.gain <= 0 && x.verdict !== 'reference' ? 'color:var(--r)' : ''}">${x.verdict === 'reference' || !recent(x) ? p3(x.prix) + ' €' : montant(x.gain)}</div>
+      <div style="font-weight:600">${x.verdict === 'reference' || !recent(x) ? '' : (x.gain > 0 ? 'd\'économie sur ce plein · ' : 'de perte sur ce plein · ')}${nomCarbu()} ${p3(x.prix)} €/L${x.verdict !== 'reference' ? ' · détour ' + km(x.detourKm) : ''}</div></div></div>`;
   } else if (s.r && P.carbu in s.r) {
     html += `<div class="alerte" style="border-radius:14px">${IC_DANGER}<div><h2>En rupture</h2><p>${nomCarbu()} indisponible ${s.r[P.carbu] ? 'depuis ' + depuis(now - s.r[P.carbu]).replace('il y a ', '') : ''}.</p></div></div>`;
   }
@@ -364,7 +368,7 @@ function ouvrirStation(id) {
   }).join('')}</div>`;
   html += `<div class="actions"><button class="btn-noir" data-yaller="${esc(s.id)}">${IC_GO}Y aller</button><button class="btn-blanc" data-partage="${esc(s.id)}" aria-label="Alerter un proche"${!x ? ' disabled style="opacity:.4"' : ''}>${IC_PARTAGE}</button></div>
     <button class="btn-blanc" data-hab style="font-size:17px">${P.habId === s.id ? 'Ma station habituelle · retirer' : 'Définir comme station habituelle'}</button>`;
-  const c = ouvrirFeuille(titre(s.adr) || titre(s.ville), html);
+  const c = ouvrirFeuille(s.m || titre(s.adr) || titre(s.ville), html);
   c.querySelector('[data-yaller]').addEventListener('click', () => ouvrirYaller(s.id));
   const bp = c.querySelector('[data-partage]'); if (x) bp.addEventListener('click', () => ouvrirPartage(s.id));
   c.querySelector('[data-hab]').addEventListener('click', () => {
@@ -375,7 +379,7 @@ function ouvrirStation(id) {
 function ouvrirYaller(id) {
   const s = station(id); if (!s) return;
   const ll = `${s.lat},${s.lng}`;
-  ouvrirFeuille('Y aller avec…', `<p class="gris" style="margin:0">${esc(nomStation(s))}</p>
+  ouvrirFeuille('Y aller avec…', `<p class="gris" style="margin:0">${esc(s.m ? s.m + ' · ' + adresse(s) : adresse(s))}</p>
     <a class="appli" href="https://waze.com/ul?ll=${ll}&navigate=yes" target="_blank" rel="noopener">Waze</a>
     <a class="appli" href="https://www.google.com/maps/dir/?api=1&destination=${ll}&travelmode=driving" target="_blank" rel="noopener">Google Maps</a>
     <a class="appli" href="https://maps.apple.com/?daddr=${ll}&dirflg=d" target="_blank" rel="noopener">Plans (iPhone)</a>`);
@@ -384,12 +388,12 @@ function ouvrirPartage(id) {
   const s = station(id); if (!s) return;
   const R = calculer(); const x = R?.classement.find(c => c.station === s); if (!x) return;
   const g = x.verdict === 'reference' ? 0 : Math.max(0, x.gain);
-  const msg = `Bon plan carburant à ${titre(s.ville)} : ${titre(s.adr)}, le ${nomCarbuTexte()} est à ${p3(x.prix)} €/L${g > 0 ? ` (soit ${g.toFixed(2).replace('.', ',')} € d'économie nette sur un plein)` : ''}. Repéré sur Jamais à sec : ${location.origin}`;
+  const msg = `Bon plan carburant à ${titre(s.ville)} : ${s.m ? s.m + ' (' + titre(s.adr) + ')' : titre(s.adr)}, le ${nomCarbuTexte()} est à ${p3(x.prix)} €/L${g > 0 ? ` (soit ${g.toFixed(2).replace('.', ',')} € d'économie nette sur un plein)` : ''}. Repéré sur Jamais à sec : ${location.origin}`;
   const c = ouvrirFeuille('Alerter un proche', `<div class="carte-partage"><div>
       <div style="display:flex;justify-content:space-between;align-items:center"><span class="cond logo" style="font-weight:800;font-size:18px;text-transform:uppercase">${IC_VOYANT}Jamais à sec</span><span class="cond" style="font-weight:700;font-size:15px;background:var(--n);color:var(--j);padding:3px 8px;border-radius:5px;text-transform:uppercase">Bon plan</span></div>
       <div class="cond" style="font-weight:800;font-size:60px;line-height:.95">${p3(x.prix)} €</div>
       <div style="font-size:15px;font-weight:600">le litre de ${nomCarbuTexte()} · ${esc(nomStation(s))}</div>
-      ${g > 0 ? `<div class="cond" style="margin-top:6px;background:var(--n);color:#fff;border-radius:8px;padding:8px 12px;font-weight:700;font-size:20px;text-transform:uppercase">Environ <span style="color:var(--j)">${euros(g)}</span> net sur un plein</div>` : ''}
+      ${g > 0 ? `<div class="cond" style="margin-top:6px;background:var(--n);color:#fff;border-radius:8px;padding:8px 12px;font-weight:700;font-size:20px;text-transform:uppercase"><span style="color:var(--j)">${montant(g)}</span> d'économie sur un plein</div>` : ''}
     </div></div>
     <div><div class="gris" style="font-weight:600;margin-bottom:8px">Message</div><div class="bulle">${esc(msg)}</div></div>
     <div class="deux"><button class="btn-blanc" data-copier>Copier</button><button class="btn-noir" data-envoyer>Partager</button></div>`);
@@ -502,7 +506,7 @@ function rendreVehicule() {
     ${S.installer ? '<button class="btn-noir" id="v-installer">Installer l\'app sur ce téléphone</button>' : ''}
     <button class="lien" id="revoir">Revoir l'écran d'accueil</button>
     <button class="btn-blanc" id="v-soutien" style="font-size:19px">Soutenir Jamais à sec</button>
-    <p class="gris" style="margin:0;font-size:13px;line-height:1.45">Prix : Ministère de l'Économie et des Finances, « Prix des carburants en France », Licence Ouverte 2.0 (data.gouv.fr). Carte : © OpenStreetMap, OpenFreeMap. Application indépendante, non affiliée au gouvernement. Votre position reste dans votre téléphone. Sebdesign Studio.</p>
+    <p class="gris" style="margin:0;font-size:13px;line-height:1.45">Prix : Ministère de l'Économie et des Finances, « Prix des carburants en France », Licence Ouverte 2.0 (data.gouv.fr). Carte et enseignes : © contributeurs OpenStreetMap (ODbL), OpenFreeMap. Application indépendante, non affiliée au gouvernement. Votre position reste dans votre téléphone. Sebdesign Studio.</p>
   </div>`;
   el.scrollTop = y;
   brancherChoix('v-carbu', CARBUS.map(c => ({ v: c.id })), v => { P.carbu = v; sauver(); rafraichir(); });
