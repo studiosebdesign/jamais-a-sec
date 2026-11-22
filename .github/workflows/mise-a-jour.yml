@@ -43,7 +43,7 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Télécharger et préparer les prix (et compléter l'historique publié)
-        run: node src/index.js --sortie ../site --historique "${{ steps.pages.outputs.base_url }}/data/tendances.json"
+        run: node src/index.js --sortie ../site --historique "${{ steps.pages.outputs.base_url }}/data/tendances.json" --enseignes "${{ steps.pages.outputs.base_url }}/data/enseignes.json"
         working-directory: donnees
 
       - name: Envoyer les fichiers
