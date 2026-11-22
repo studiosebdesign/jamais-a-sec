@@ -103,6 +103,10 @@ async function rechercherLieu(q) {
     lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1]
   }));
 }
+// Vrai si le navigateur a déjà l'autorisation (pas de nouvelle question à l'ouverture)
+async function gpsAutorise() {
+  try { const r = await navigator.permissions.query({ name: 'geolocation' }); return r.state === 'granted'; } catch (e) { return false; }
+}
 // Surveille la vitesse pour l'écran « Vous roulez »
 function surveillerConduite() {
   if (!('geolocation' in navigator) || surveillerConduite.id != null) return;
@@ -208,7 +212,7 @@ function htmlEntete(R) {
       <button data-mode="autour" aria-pressed="${P.mode !== 'trajet' || !t}">Autour de moi</button>
       ${t ? `<button data-mode="trajet" aria-pressed="${P.mode === 'trajet'}">Sur ma route</button>` : '<button data-ajout-trajet aria-pressed="false">+ Mon trajet</button>'}
     </div>
-    <button class="lien" data-position style="padding:0;font-size:14px;text-decoration:none;text-align:left">${P.position ? `Depuis : <b>${esc(P.position.label)}</b>${P.mode === 'trajet' && t ? ` → <b>${esc(t.nom)} · ${esc(t.ville || t.label)}</b>` : ''} · <u>changer</u>` : '<u>Choisir une position</u>'}</button>`;
+    <button class="lien" data-position style="padding:0;font-size:14px;text-decoration:none;text-align:left">${P.position ? `Depuis : <b>${esc(P.position.label)}</b>${P.mode === 'trajet' && t ? ` → <b>${esc(t.nom)} · ${esc(t.ville || t.label)}</b>` : ''} · <u>${P.position.source === 'gps' && Date.now() - (P.position.quand || 0) > 20 * 60000 ? 'actualiser' : 'changer'}</u>` : '<u>Choisir une position</u>'}</button>`;
 }
 function htmlTendance() {
   const dep = departementUtilisateur();
@@ -320,12 +324,18 @@ function brancherVerdict(el, R) {
   el.querySelectorAll('[data-e10-info]').forEach(b => b.addEventListener('click', ouvrirE10));
   el.querySelectorAll('[data-e10]').forEach(b => b.addEventListener('click', () => { P.carbu = 'e10'; sauver(); toast('Carburant passé au SP95-E10. Vous pouvez revenir en arrière dans « Mon véhicule ».'); rafraichir(); }));
   const c = document.getElementById('vol');
-  if (c) c.addEventListener('input', () => {
-    S.vol = parseFloat(c.value);
-    document.getElementById('o-vol').textContent = litres(S.vol);
-    clearTimeout(rendreVerdict.t);
-    rendreVerdict.t = setTimeout(() => { const y = el.scrollTop; rendreVerdict(); el.scrollTop = y; document.getElementById('vol')?.focus({ preventScroll: true }); }, 80);
-  });
+  if (c) {
+    // Pendant le glissé : on met à jour les chiffres sans toucher au curseur (sinon il « lâche » sous le doigt)
+    c.addEventListener('input', () => {
+      S.vol = parseFloat(c.value);
+      document.getElementById('o-vol').textContent = litres(S.vol);
+      const R2 = calculer(), gros = el.querySelector('.panneau .gros');
+      const b2 = R2 && R2.classement.find(x => x.verdict !== 'reference' && x.gain > 0 && recent(x));
+      if (gros && b2) gros.textContent = euros(b2.gain);
+    });
+    // Au relâchement : on recalcule tout l'écran
+    c.addEventListener('change', () => { const y = el.scrollTop; rendreVerdict(); el.scrollTop = y; });
+  }
 }
 
 // =================== FEUILLES : STATION, Y ALLER, PARTAGE, E10 ===================
@@ -514,6 +524,26 @@ function ouvrirHabituelle() {
   c.querySelectorAll('[data-id]').forEach(b => b.addEventListener('click', () => { P.habId = b.dataset.id || null; sauver(); fermerFeuille(); rafraichir(); toast(P.habId ? 'Station habituelle enregistrée.' : 'Référence : la station la plus proche.'); }));
 }
 
+// =================== INSTALLATION ===================
+const estInstallee = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const estIPhone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+function htmlInstaller() {
+  if (estInstallee()) return '';
+  if (S.installer) return `<div class="aide" style="background:#fff;align-items:center">${IC_VOYANT.replace('class="voyant"', 'width="30" height="30" style="flex:none"')}<div><b>Installez l'app</b>Une icône sur votre écran d'accueil, en plein écran, même sans réseau.</div></div>
+    <button class="btn-noir" data-installer>Installer Jamais à sec</button>`;
+  if (estIPhone()) return `<div class="aide" style="background:#fff">${IC_INFO}<div><b>Installez l'app</b>Dans Safari, touchez le bouton Partager (le carré avec une flèche), puis « Sur l'écran d'accueil ».</div></div>`;
+  return `<div class="aide" style="background:#fff">${IC_INFO}<div><b>Installez l'app</b>Dans Chrome, ouvrez le menu ⋮ en haut à droite, puis « Ajouter à l'écran d'accueil » ou « Installer l'application ».</div></div>`;
+}
+function brancherInstaller(racine) {
+  racine.querySelector('[data-installer]')?.addEventListener('click', async () => {
+    if (!S.installer) return;
+    S.installer.prompt();
+    const r = await S.installer.userChoice; S.installer = null;
+    toast(r.outcome === 'accepted' ? 'Jamais à sec est installée sur votre écran d\'accueil.' : 'Vous pourrez l\'installer plus tard depuis « Mon véhicule ».');
+    if (document.getElementById('accueil').classList.contains('ouvert')) rendreAccueil(); else rafraichir();
+  });
+}
+
 // =================== ACCUEIL ===================
 let etape = 0;
 function ouvrirAccueil(n = 0) { etape = n; document.getElementById('accueil').classList.add('ouvert'); rendreAccueil(); }
@@ -525,7 +555,9 @@ function rendreAccueil() {
     pg.innerHTML = `<div style="width:96px;height:96px;border-radius:24px;background:var(--n);color:var(--j);display:flex;align-items:center;justify-content:center;margin-top:16px">${IC_VOYANT.replace('class="voyant"', 'width="60" height="60"')}</div>
       <p class="grosTitre">Jamais<br>à sec</p>
       <p style="font-size:17px;font-weight:500;margin:0;line-height:1.45">On calcule si une station moins chère vaut vraiment le trajet pour <b>votre</b> voiture, et on vous alerte quand le carburant vient à manquer autour de vous.</p>
-      <p class="gris" style="margin:0">Quelques questions et c'est parti. Aucun compte à créer.</p>`;
+      <p class="gris" style="margin:0">Quelques questions et c'est parti. Aucun compte à créer.</p>
+      ${htmlInstaller()}`;
+    brancherInstaller(pg);
     btn.textContent = 'Commencer';
   } else if (etape === 1) {
     pg.innerHTML = `<h1>Votre carburant</h1>${choixHTML('a-carbu', CARBUS.map(c => ({ n: c.n, v: c.id })), P.carbu)}`;
@@ -559,6 +591,8 @@ function rendreAccueil() {
       ${!prets ? (S.erreur ? `<p>${esc(S.erreur)}</p>` : '<div class="chargement"><div class="rond"></div><div>Chargement des stations…</div></div>') : `<div class="liste" id="a-hab">
         <button class="ligne-st${!P.habId ? ' frais' : ''}" data-id="" style="background:#fff"><div style="min-width:0"><div class="nom">Pas d'habitude</div><div class="meta">On prendra la plus proche</div></div><div class="val" style="font-size:16px">${!P.habId ? 'CHOISIE' : ''}</div></button>
         ${liste.map(x => `<button class="ligne-st${P.habId === x.s.id ? ' frais' : ''}" data-id="${esc(x.s.id)}" style="background:#fff"><div style="min-width:0"><div class="nom">${esc(nomStation(x.s))}</div><div class="meta">${km(x.d)} · ${p3(x.s.p[P.carbu][0])} €</div></div><div class="val" style="font-size:16px">${P.habId === x.s.id ? 'CHOISIE' : ''}</div></button>`).join('')}</div>`}`;
+    pg.insertAdjacentHTML('beforeend', htmlInstaller());
+    brancherInstaller(pg);
     pg.querySelectorAll('[data-id]').forEach(b => b.addEventListener('click', () => { P.habId = b.dataset.id || null; sauver(); rendreAccueil(); }));
     btn.textContent = 'C\'est parti';
   }
@@ -571,11 +605,12 @@ document.getElementById('acc-suivant').addEventListener('click', () => {
 });
 // Rafraîchit l'étape « station habituelle » quand les données arrivent
 const rafraichirOrigine = rafraichir;
-rafraichir = function () { rafraichirOrigine(); if (document.getElementById('accueil').classList.contains('ouvert') && etape === 4) rendreAccueil(); };
+rafraichir = function () { rafraichirOrigine(); if (document.getElementById('accueil').classList.contains('ouvert') && (etape === 4 || etape === 0)) rendreAccueil(); };
 
 // =================== CONDUITE, INSTALLATION, RÉSEAU ===================
 document.getElementById('c-passager').addEventListener('click', () => { document.getElementById('conduite').classList.remove('ouvert'); S.passager = true; toast('Mode passager : bonne route !'); });
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); S.installer = e; if (ecranActuel === 'vehicule') rendreVehicule(); });
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); S.installer = e; rafraichir(); });
+window.addEventListener('appinstalled', () => { S.installer = null; rafraichir(); });
 window.addEventListener('online', () => { S.horsLigne = false; chargerDonnees(); });
 window.addEventListener('offline', () => { S.horsLigne = true; rafraichir(); });
 document.addEventListener('visibilitychange', () => {
@@ -610,7 +645,7 @@ const radar = {
 async function demarrer() {
   aller(location.hash.slice(1) || 'verdict');
   if (!P.accueilFait) ouvrirAccueil(0);
-  if (P.position?.source === 'gps') {
+  if (P.position?.source === 'gps' && await gpsAutorise()) {
     try { P.position = await positionGPS(); sauver(); surveillerConduite(); } catch (e) {}
   }
   chargerDonnees();
