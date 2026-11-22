@@ -201,7 +201,7 @@ test('enseignes OpenStreetMap : noms harmonisés et association à moins de 150 
   ] });
   assert.equal(osm.points.length, 2);
   const st = [{ id: 'A', lat: 48.517, lng: 2.449 }, { id: 'B', lat: 48.5695, lng: 2.4402 }, { id: 'C', lat: 48.53, lng: 2.46 }];
-  assert.equal(associer(st, osm), 2);
+  assert.equal(associer(st, osm).marques, 2);
   assert.equal(st[0].m, 'TotalEnergies');
   assert.equal(st[1].m, 'Intermarché', 'à ~60 m');
   assert.equal(st[2].m, undefined, 'trop loin : pas d\'enseigne');
@@ -218,4 +218,14 @@ test('enseignes OpenStreetMap : noms harmonisés et association à moins de 150 
   assert.equal(st2[0].m, 'Garage du Centre', '~280 m, seule candidate');
   assert.equal(st2[1].m, undefined, '~280 m mais une autre station officielle est plus proche de ce point');
   assert.equal(st2[2].m, 'Avia', '~110 m');
+  // Par identifiant officiel : enseigne + position corrigée, même à 3 km
+  const osm3 = depuisOSM({ elements: [
+    { type: 'node', lat: 48.4700, lon: 2.3900, tags: { brand: 'TotalEnergies', name: 'Relais Moulin du Gué', 'ref:FR:prix-carburants': '91590003' } },
+    { type: 'node', lat: 48.4710, lon: 2.3910, tags: { brand: 'BP' } }
+  ] });
+  const st3 = [{ id: '91590003', lat: 48.4950, lng: 2.4100 }];
+  const r3 = associer(st3, osm3);
+  assert.equal(st3[0].m, 'TotalEnergies');
+  assert.deepEqual([st3[0].lat, st3[0].lng], [48.47, 2.39]);
+  assert.equal(r3.positions, 1);
 });
