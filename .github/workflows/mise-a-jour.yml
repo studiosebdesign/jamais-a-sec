@@ -19,12 +19,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  mise-a-jour:
+  # 1) Préparer les données (prix, enseignes, horaires) et les empaqueter pour GitHub Pages
+  preparer:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: github-pages
-      url: ${{ steps.publication.outputs.page_url }}
+    timeout-minutes: 15
     steps:
       - name: Récupérer le projet
         uses: actions/checkout@v4
@@ -51,6 +49,15 @@ jobs:
         with:
           path: site
 
+  # 2) Publier, dans une tâche séparée (méthode recommandée par GitHub : le paquet est bien enregistré avant la publication)
+  publier:
+    needs: preparer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.publication.outputs.page_url }}
+    steps:
       - name: Publier sur GitHub Pages
         id: publication
         uses: actions/deploy-pages@v4
